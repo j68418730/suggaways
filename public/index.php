@@ -982,8 +982,8 @@ switch ($page) {
             db()->prepare('INSERT INTO inventory (product_id, stock_quantity) VALUES (?, 25)')->execute([$pid]);
             db()->prepare('DELETE FROM coming_soon WHERE id = ?')->execute([(int)$item['id']]);
         }
-        $featured = db()->query('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active" AND p.is_featured = 1 ORDER BY p.created_at DESC LIMIT 6')->fetchAll();
-        $newDrops = db()->query('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active" AND p.is_new = 1 ORDER BY p.created_at DESC LIMIT 4')->fetchAll();
+        $featured = db()->query('SELECT p.*, (SELECT i.stock_quantity FROM inventory i WHERE i.product_id = p.id LIMIT 1) as stock_quantity FROM products p WHERE p.status = "active" AND p.is_featured = 1 ORDER BY p.created_at DESC LIMIT 6')->fetchAll();
+        $newDrops = db()->query('SELECT p.*, (SELECT i.stock_quantity FROM inventory i WHERE i.product_id = p.id LIMIT 1) as stock_quantity FROM products p WHERE p.status = "active" AND p.is_new = 1 ORDER BY p.created_at DESC LIMIT 4')->fetchAll();
         $collections = db()->query('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order')->fetchAll();
         $comingSoon = db()->query('SELECT * FROM coming_soon ORDER BY release_date ASC LIMIT 6')->fetchAll();
         $hero_class = 'hero-home';
@@ -998,7 +998,7 @@ switch ($page) {
         $categorySlug = $_GET['category'] ?? null;
         $sort = $_GET['sort'] ?? 'newest';
         $search = trim($_GET['search'] ?? '');
-        $sql = 'SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active"';
+        $sql = 'SELECT p.*, (SELECT i.stock_quantity FROM inventory i WHERE i.product_id = p.id LIMIT 1) as stock_quantity FROM products p WHERE p.status = "active"';
         $params = [];
         if ($categorySlug) {
             $sql .= ' AND p.category_id = (SELECT id FROM categories WHERE slug = ?)';
@@ -1029,7 +1029,7 @@ switch ($page) {
 
     case 'product':
         $slug = $_GET['slug'] ?? '';
-        $stmt = db()->prepare('SELECT p.*, i.stock_quantity, c.name as category_name, c.slug as category_slug FROM products p LEFT JOIN inventory i ON i.product_id = p.id LEFT JOIN categories c ON c.id = p.category_id WHERE p.slug = ? AND p.status = "active"');
+        $stmt = db()->prepare('SELECT p.*, (SELECT i.stock_quantity FROM inventory i WHERE i.product_id = p.id LIMIT 1) as stock_quantity, c.name as category_name, c.slug as category_slug FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.slug = ? AND p.status = "active"');
         $stmt->execute([$slug]);
         $product = $stmt->fetch();
         if (!$product) abort(404, 'Product not found');
@@ -1037,7 +1037,7 @@ switch ($page) {
         $sizes = json_decode($product['sizes'] ?? '[]', true);
         $colors = json_decode($product['colors'] ?? '[]', true);
         $reviews = db()->prepare('SELECT r.*, u.full_name, u.avatar FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.product_id = ? AND r.is_approved = 1 ORDER BY r.created_at DESC')->execute([(int)$product['id']]) ? db()->query('SELECT r.*, u.full_name, u.avatar FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.product_id = 0')->fetchAll() : [];
-        $related = db()->prepare('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.category_id = ? AND p.id != ? AND p.status = "active" LIMIT 4');
+        $related = db()->prepare('SELECT p.*, (SELECT i.stock_quantity FROM inventory i WHERE i.product_id = p.id LIMIT 1) as stock_quantity FROM products p WHERE p.category_id = ? AND p.id != ? AND p.status = "active" LIMIT 4');
         $related->execute([(int)$product['category_id'], (int)$product['id']]);
         $relatedProducts = $related->fetchAll();
         $seo_title = $product['meta_title'] ?: $product['name'] . ' — SUGGAWAYZ';
@@ -1056,7 +1056,7 @@ switch ($page) {
         break;
 
     case 'new-drops':
-        $newProducts = db()->query('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active" AND p.is_new = 1 ORDER BY p.created_at DESC')->fetchAll();
+        $newProducts = db()->query('SELECT p.*, (SELECT i.stock_quantity FROM inventory i WHERE i.product_id = p.id LIMIT 1) as stock_quantity FROM products p WHERE p.status = "active" AND p.is_new = 1 ORDER BY p.created_at DESC')->fetchAll();
         $hero_content = '<p class="eyebrow">Fresh Arrivals</p><h1>New Drops</h1><p>Limited edition pieces and the latest releases.</p>';
         $content = render_new_drops($newProducts);
         break;
@@ -1232,7 +1232,7 @@ case 'shipping':
         if (!$user || !is_admin($user)) { session_flash('error', 'Access denied.'); redirect('/?page=login'); }
         $tab = $_GET['tab'] ?? 'dashboard';
         $stats = db()->query('SELECT (SELECT COUNT(*) FROM products) as products, (SELECT COUNT(*) FROM users WHERE role = "customer" AND is_deleted=0) as customers, (SELECT COUNT(*) FROM orders) as orders, (SELECT COUNT(*) FROM orders WHERE status = "pending") as pending_orders, (SELECT COUNT(*) FROM inventory WHERE stock_quantity <= low_stock_threshold) as low_stock, (SELECT COUNT(*) FROM payments WHERE status = "failed") as failed_payments, (SELECT COALESCE(SUM(total), 0) FROM orders WHERE status NOT IN ("cancelled", "refunded")) as revenue')->fetch();
-        $allProducts = db()->query('SELECT p.*, i.stock_quantity, i.low_stock_threshold, i.reorder_level, i.warehouse, i.location_id FROM products p LEFT JOIN inventory i ON i.product_id = p.id ORDER BY p.created_at DESC')->fetchAll();
+        $allProducts = db()->query('SELECT p.*, i.stock_quantity, i.low_stock_threshold, i.reorder_level, i.warehouse, i.location_id FROM products p LEFT JOIN (SELECT product_id, MIN(stock_quantity) as stock_quantity, MIN(low_stock_threshold) as low_stock_threshold, MIN(reorder_level) as reorder_level, MIN(warehouse) as warehouse, MIN(location_id) as location_id FROM inventory GROUP BY product_id) i ON i.product_id = p.id ORDER BY p.created_at DESC')->fetchAll();
         $orderSearch = trim($_GET['order_search'] ?? '');
         $orderBy = $_GET['order_by'] ?? 'created_at';
         $orderDir = $_GET['order_dir'] ?? 'DESC';

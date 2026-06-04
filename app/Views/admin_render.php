@@ -1364,7 +1364,7 @@ function admin_signins(array $logs): void
 function admin_pos(array $sessions, ?array $openSession, array $transactions, array $user, array $products = []): void
 {
     $clockedIn = is_clocked_in((int)$user['id']);
-    $products = $products ?: db()->query('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active" ORDER BY p.name ASC LIMIT 200')->fetchAll();
+    $products = $products ?: db()->query('SELECT p.*, (SELECT i.stock_quantity FROM inventory i WHERE i.product_id = p.id LIMIT 1) as stock_quantity FROM products p WHERE p.status = "active" ORDER BY p.name ASC LIMIT 200')->fetchAll();
     $taxRate = (float)site_setting('pos_tax_rate', '0');
     ?>
     <div class="panel">
