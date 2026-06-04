@@ -111,9 +111,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $paymentMethod = (string)$_POST['payment_method'];
             $notes = trim((string)$_POST['notes']);
 
+            // Guest checkout — create user if not logged in
             if (!$user) {
-                session_flash('error', 'Please log in to checkout.');
-                redirect('/?page=login');
+                $guestName = trim((string)($_POST['guest_name'] ?? ''));
+                $guestEmail = trim((string)($_POST['guest_email'] ?? ''));
+                if (!$guestName || !$guestEmail) {
+                    session_flash('error', 'Please provide your name and email.');
+                    redirect('/?page=checkout');
+                }
+                $guestUsername = 'guest_' . bin2hex(random_bytes(6));
+                $stmt = db()->prepare('SELECT id FROM users WHERE email = ?');
+                $stmt->execute([$guestEmail]);
+                $existing = $stmt->fetch();
+                if ($existing) {
+                    $userId = (int)$existing['id'];
+                } else {
+                    $hash = password_hash(bin2hex(random_bytes(16)), PASSWORD_ARGON2ID);
+                    $stmt = db()->prepare('INSERT INTO users (role, username, email, password_hash, full_name) VALUES (?, ?, ?, ?, ?)');
+                    $stmt->execute(['customer', $guestUsername, $guestEmail, $hash, $guestName]);
+                    $userId = (int)db()->lastInsertId();
+                }
+                // Auto-login guest
+                $_SESSION['user_id'] = $userId;
+                $user = current_user();
             }
 
             // Create address from inline fields if provided

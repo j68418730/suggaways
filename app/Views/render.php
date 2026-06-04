@@ -686,9 +686,16 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
       <div class="checkout-form">
         <?php if (!$user): ?>
           <div class="panel" style="border-color:var(--cyan);text-align:center;margin-bottom:20px">
-            <h3>Sign in to checkout</h3>
+            <h3>Already have an account?</h3>
             <p style="margin:8px 0"><a href="/?page=login" class="button primary" style="padding:8px 24px">Sign In</a> <a href="/?page=register" class="button" style="padding:8px 24px">Create Account</a></p>
-            <p class="hint">You need to sign in or create an account before placing an order.</p>
+            <p class="hint">Or checkout as a guest — your info will be saved with the order.</p>
+          </div>
+          <div class="panel" style="margin-bottom:16px">
+            <h3>Your Information</h3>
+            <div class="grid two">
+              <label>Full Name <input name="guest_name" value="<?= e(old('guest_name')) ?>" required></label>
+              <label>Email Address <input name="guest_email" type="email" value="<?= e(old('guest_email')) ?>" required></label>
+            </div>
           </div>
         <?php endif; ?>
 
