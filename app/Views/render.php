@@ -686,9 +686,9 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
       <div class="checkout-form">
         <?php if (!$user): ?>
           <div class="panel" style="border-color:var(--cyan);text-align:center;margin-bottom:20px">
-            <h3>Already have an account?</h3>
+            <h3>Sign in to checkout</h3>
             <p style="margin:8px 0"><a href="/?page=login" class="button primary" style="padding:8px 24px">Sign In</a> <a href="/?page=register" class="button" style="padding:8px 24px">Create Account</a></p>
-            <p class="hint">Sign in to use saved addresses and track your orders. You can also checkout as a guest below.</p>
+            <p class="hint">You need to sign in or create an account before placing an order.</p>
           </div>
         <?php endif; ?>
 
@@ -733,15 +733,13 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
 
           <div class="panel">
             <h3>Shipping Method</h3>
-            <?php foreach ($shippingMethods as $method): ?>
-              <label class="address-option panel" style="cursor:pointer;margin-bottom:8px">
-                <input type="radio" name="shipping_method" value="<?= (int)$method['id'] ?>" <?= $method === $shippingMethods[0] ? 'checked' : '' ?>>
-                <div>
-                  <strong><?= e($method['carrier']) ?> — <?= e($method['service_name']) ?></strong>
-                  <p>$<?= e(number_format((float)$method['base_rate'], 2)) ?> — <?= (int)$method['estimated_days_min'] ?>-<?= (int)$method['estimated_days_max'] ?> business days</p>
-                </div>
-              </label>
-            <?php endforeach; ?>
+            <select name="shipping_method" class="form-input" style="width:100%;padding:10px 14px;font-size:14px">
+              <?php foreach ($shippingMethods as $method): ?>
+                <option value="<?= (int)$method['id'] ?>" <?= $method === $shippingMethods[0] ? 'selected' : '' ?>>
+                  <?= e($method['carrier']) ?> — <?= e($method['service_name']) ?> ($<?= e(number_format((float)$method['base_rate'], 2)) ?>, <?= (int)$method['estimated_days_min'] ?>-<?= (int)$method['estimated_days_max'] ?> days)
+                </option>
+              <?php endforeach; ?>
+            </select>
           </div>
 
           <div class="panel">
