@@ -698,9 +698,7 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
 
           <div class="panel">
             <h3>Shipping Address</h3>
-            <?php if (empty($addresses)): ?>
-              <p>No saved addresses. <a href="/?page=account&tab=addresses">Add one</a> first.</p>
-            <?php else: ?>
+            <?php if (!empty($addresses)): ?>
               <?php foreach ($addresses as $addr): ?>
                 <label class="address-option panel" style="cursor:pointer;margin-bottom:8px">
                   <input type="radio" name="address_id" value="<?= (int)$addr['id'] ?>" <?= $addr['is_default_shipping'] ? 'checked' : '' ?>>
@@ -710,7 +708,26 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
                   </div>
                 </label>
               <?php endforeach; ?>
+              <hr style="border-color:var(--line-soft);margin:12px 0">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted)">
+                <input type="checkbox" id="useNewAddress" onchange="document.getElementById('newAddressFields').style.display=this.checked?'block':'none'">
+                Ship to a different address
+              </label>
             <?php endif; ?>
+            <div id="newAddressFields" <?= empty($addresses) ? '' : 'style="display:none"' ?>>
+              <div class="form" style="margin-top:8px">
+                <label>Full Name <input name="addr_name" value="<?= e($user['full_name'] ?? '') ?>" <?= empty($addresses) ? 'required' : '' ?>></label>
+                <label>Street Address <input name="addr_street" required></label>
+                <div class="grid two">
+                  <label>City <input name="addr_city" required></label>
+                  <label>State <input name="addr_state" required></label>
+                </div>
+                <div class="grid two">
+                  <label>ZIP Code <input name="addr_zip" required></label>
+                  <label>Country <input name="addr_country" value="United States" required></label>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="panel" id="cashapp-fields" style="display:none;border-color:var(--green)">
