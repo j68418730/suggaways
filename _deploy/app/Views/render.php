@@ -740,8 +740,8 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
           <div class="panel" id="cashapp-fields" style="display:none;border-color:var(--green)">
             <h3>Cash App Payment Info</h3>
             <p class="hint">Enter your name and phone number to generate a Cash App payment QR code.</p>
-            <label>Full Name <input name="cashapp_name" placeholder="John Doe" required></label>
-            <label>Phone Number <input name="cashapp_phone" type="tel" placeholder="+1 (555) 000-0000" required></label>
+            <label>Full Name <input name="cashapp_name" placeholder="John Doe"></label>
+            <label>Phone Number <input name="cashapp_phone" type="tel" placeholder="+1 (555) 000-0000"></label>
             <?php if ($cashtag): ?>
               <div style="margin-top:12px;text-align:center">
                 <p><strong>Pay via Cash App:</strong></p>
@@ -810,14 +810,16 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
     function toggleCashApp() {
       var sel = document.querySelector('input[name="payment_method"]:checked');
       var fields = document.getElementById('cashapp-fields');
+      var inputs = fields.querySelectorAll('input[name="cashapp_name"], input[name="cashapp_phone"]');
       if (sel && sel.value === 'cash_app') {
         fields.style.display = 'block';
-        fields.querySelectorAll('[required]').forEach(function(el) { el.required = true; });
+        inputs.forEach(function(el) { el.required = true; });
       } else {
         fields.style.display = 'none';
-        fields.querySelectorAll('[required]').forEach(function(el) { el.required = false; });
+        inputs.forEach(function(el) { el.required = false; });
       }
     }
+    toggleCashApp();
     </script>
     <?php
     return ob_get_clean();
