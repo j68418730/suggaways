@@ -53,4 +53,14 @@ document.addEventListener('DOMContentLoaded', function () {
       if (radio) radio.checked = true;
     });
   });
+
+  // Mobile menu toggle
+  var menuToggle = document.querySelector('.menu-toggle');
+  var nav = document.querySelector('.nav');
+  if (menuToggle && nav) {
+    menuToggle.addEventListener('click', function () {
+      nav.classList.toggle('nav-open');
+      menuToggle.textContent = nav.classList.contains('nav-open') ? '✕' : '☰';
+    });
+  }
 });
