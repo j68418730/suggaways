@@ -483,8 +483,8 @@ function admin_customers(array $customers): void
               <label>Full Name<input name="full_name" required></label>
               <label>Phone<input name="phone"></label>
             </div>
-            <p class="hint" style="margin:8px 0;color:var(--orange)">Password is auto-generated — it will be shown ONCE after creation. Copy it immediately.</p>
-            <button class="button primary" type="submit">Create (auto-generate password)</button>
+            <label>Password (leave blank to auto-generate)<input name="password" type="password" placeholder="Or leave blank for random"></label>
+            <button class="button primary" type="submit">Create Customer</button>
           </form>
         </div>
       </details>
@@ -549,8 +549,8 @@ function admin_employees(array $employees): void
                 <option value="webmaster">Webmaster</option>
               </select>
             </label>
-            <p class="hint" style="margin:8px 0;color:var(--orange)">Password is auto-generated — it will be shown ONCE in a notice after creation. Copy it immediately.</p>
-            <button class="button primary" type="submit">Create (auto-generate password)</button>
+            <label>Password (leave blank to auto-generate)<input name="password" type="password" placeholder="Or leave blank for random"></label>
+            <button class="button primary" type="submit">Create Employee</button>
           </form>
         </div>
       </details>

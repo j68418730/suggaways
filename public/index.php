@@ -482,11 +482,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // === CUSTOMERS ===
         case 'admin_add_customer':
             if (!$user || !is_admin($user)) { abort(403); }
-            $pw = bin2hex(random_bytes(8));
+            $customPw = trim((string)($_POST['password'] ?? ''));
+            $pw = $customPw ?: bin2hex(random_bytes(8));
+            if (!empty($customPw) && strlen($customPw) < 6) {
+                session_flash('error', 'Password must be at least 6 characters.');
+                redirect('/?page=admin&tab=customers');
+            }
             $hash = password_hash($pw, PASSWORD_ARGON2ID);
             db()->prepare('INSERT INTO users (role, username, email, password_hash, full_name, phone, is_employee, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, 0, NOW())')
                 ->execute(['customer', $_POST['username'], $_POST['email'], $hash, $_POST['full_name'], $_POST['phone'] ?? null]);
-            session_flash('notice', 'Customer created. Temp password: ' . $pw);
+            $msg = $customPw ? 'Customer created with your chosen password.' : 'Customer created. Temp password: ' . $pw;
+            session_flash('notice', $msg);
             redirect('/?page=admin&tab=customers');
 
         case 'admin_edit_customer':
@@ -499,7 +505,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // === EMPLOYEES ===
         case 'admin_add_employee':
             if (!$user || !is_admin($user)) { abort(403); }
-            $pw = bin2hex(random_bytes(8));
+            $customPw = trim((string)($_POST['password'] ?? ''));
+            $pw = $customPw ?: bin2hex(random_bytes(8));
+            if (!empty($customPw) && strlen($customPw) < 6) {
+                session_flash('error', 'Password must be at least 6 characters.');
+                redirect('/?page=admin&tab=employees');
+            }
             $hash = password_hash($pw, PASSWORD_ARGON2ID);
             $role = $_POST['role'] ?? 'support';
             db()->prepare('INSERT INTO users (role, username, email, password_hash, full_name, phone, is_employee, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())')
@@ -509,7 +520,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 db()->prepare('INSERT IGNORE INTO admins (user_id, permission_level) VALUES (?, ?)')->execute([$uid, $role]);
             }
             audit('employee_created', 'users', (string)$uid);
-            session_flash('notice', "Employee created. Temp password: {$pw}. Tell them to change it.");
+            $msg = $customPw ? "Employee created with your chosen password." : "Employee created. Temp password: {$pw}. Tell them to change it.";
+            session_flash('notice', $msg);
             redirect('/?page=admin&tab=employees');
 
         case 'admin_edit_employee':
