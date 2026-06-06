@@ -1299,7 +1299,7 @@ case 'shipping':
         if (!$user || !is_admin($user)) { session_flash('error', 'Access denied.'); redirect('/?page=login'); }
         $tab = $_GET['tab'] ?? 'dashboard';
         $stats = db()->query('SELECT (SELECT COUNT(*) FROM products) as products, (SELECT COUNT(*) FROM users WHERE role = "customer" AND is_deleted=0) as customers, (SELECT COUNT(*) FROM orders) as orders, (SELECT COUNT(*) FROM orders WHERE status = "pending") as pending_orders, (SELECT COUNT(*) FROM inventory WHERE stock_quantity <= low_stock_threshold) as low_stock, (SELECT COUNT(*) FROM payments WHERE status = "failed") as failed_payments, (SELECT COALESCE(SUM(total), 0) FROM orders WHERE status NOT IN ("cancelled", "refunded")) as revenue')->fetch();
-        $allProducts = db()->query('SELECT p.*, i.stock_quantity, i.low_stock_threshold, i.reorder_level, i.warehouse, i.location_id FROM products p LEFT JOIN inventory i ON i.product_id = p.id ORDER BY p.created_at DESC')->fetchAll();
+        $allProducts = db()->query('SELECT p.*, (SELECT stock_quantity FROM inventory WHERE product_id = p.id LIMIT 1) as stock_quantity, (SELECT low_stock_threshold FROM inventory WHERE product_id = p.id LIMIT 1) as low_stock_threshold FROM products p ORDER BY p.created_at DESC')->fetchAll();
         $orderSearch = trim($_GET['order_search'] ?? '');
         $orderBy = $_GET['order_by'] ?? 'created_at';
         $orderDir = $_GET['order_dir'] ?? 'DESC';
