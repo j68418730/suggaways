@@ -29,7 +29,7 @@ a:hover { color: var(--cyan); }
 .hero {
   min-height: 760px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(90deg, rgba(2,6,17,0.16), rgba(2,6,17,0.86) 58%), url("/assets/img/header.png") center / cover no-repeat;
+  background: linear-gradient(90deg, rgba(2,6,17,0.16), rgba(2,6,17,0.86) 58%), url("/assets/img/header2.jpg") center / cover no-repeat;
 }
 
 .hero-home { min-height: 860px; }
