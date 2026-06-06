@@ -584,11 +584,12 @@ function admin_employees(array $employees): void
                 <label class="checkbox-label" style="font-size:11px;gap:4px"><input type="checkbox" name="is_deleted" value="1" <?= $isDeleted ? 'checked' : '' ?>> Off</label>
                 <button class="button" type="submit" style="padding:4px 6px;min-height:auto;font-size:11px">Save</button>
               </form>
-              <form method="post" style="display:inline">
+              <form method="post" style="display:inline-flex;gap:4px;align-items:center">
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="admin_employee_reset_password">
                 <input type="hidden" name="id" value="<?= (int)$e['id'] ?>">
-                <button class="button" type="submit" style="padding:4px 6px;min-height:auto;font-size:11px" onclick="return confirm('Reset password?')">Reset PW</button>
+                <input name="new_password" type="password" placeholder="New PW" style="width:80px;padding:4px 6px;font-size:11px" title="Leave blank to auto-generate">
+                <button class="button" type="submit" style="padding:4px 6px;min-height:auto;font-size:11px">Set PW</button>
               </form>
             </td>
           </tr>

@@ -540,10 +540,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         case 'admin_employee_reset_password':
             if (!$user || !is_admin($user)) { abort(403); }
-            $pw = bin2hex(random_bytes(8));
+            $customPw = trim((string)($_POST['new_password'] ?? ''));
+            $pw = $customPw ?: bin2hex(random_bytes(8));
+            if (!empty($customPw) && strlen($customPw) < 6) {
+                session_flash('error', 'Password must be at least 6 characters.');
+                redirect('/?page=admin&tab=employees');
+            }
             db()->prepare('UPDATE users SET password_hash = ? WHERE id = ? AND is_employee = 1')
                 ->execute([password_hash($pw, PASSWORD_ARGON2ID), (int)$_POST['id']]);
-            session_flash('notice', "Password reset to: {$pw}");
+            $msg = $customPw ? "Password updated to your chosen password." : "Password reset to: {$pw}";
+            session_flash('notice', $msg);
             redirect('/?page=admin&tab=employees');
 
         // === PRODUCT IMAGE UPLOAD ===
