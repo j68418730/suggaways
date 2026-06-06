@@ -212,11 +212,13 @@ function admin_products(array $products, array $categories): void
       </details>
     </div>
     <div class="panel">
-      <form method="post" id="bulkDeleteForm" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <button class="button" type="submit" form="bulkDeleteForm" style="padding:8px 16px;min-height:auto;border-color:rgba(255,76,76,0.5);background:rgba(255,76,76,0.1);color:#ff4c4c;font-size:12px" onclick="return confirm('Delete selected products?')" id="bulkDeleteBtn" disabled>Delete Selected</button>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;color:var(--muted)"><input type="checkbox" id="selectAll" onchange="document.querySelectorAll('.product-select').forEach(function(c){c.checked=this.checked;c.dispatchEvent(new Event('change'))})"> Select All</label>
+      </div>
+      <form method="post" id="bulkDeleteForm">
         <?= csrf_field() ?>
         <input type="hidden" name="action" value="admin_bulk_delete_products">
-        <button class="button" type="submit" style="border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete selected products?')" id="bulkDeleteBtn" disabled>Delete Selected</button>
-        <label style="font-size:12px;margin-left:8px"><input type="checkbox" id="selectAll" onchange="document.querySelectorAll('.product-select').forEach(function(c){c.checked=this.checked});document.getElementById('bulkDeleteBtn').disabled=!this.checked"> Select All</label>
       </form>
       <table class="table">
         <tr><th style="width:30px"></th><th>Image</th><th>Name</th><th>SKU</th><th>Price</th><th>Stock</th><th>Status</th><th>Upload Image</th><th>Actions</th></tr>
