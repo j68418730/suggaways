@@ -36,7 +36,8 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
         <a href="/?page=blog">Blog</a>
         <a href="/?page=cart" class="cart-link">Cart <?php if (cart_count() > 0): ?><span class="cart-badge"><?= e((string)cart_count()) ?></span><?php endif; ?></a>
         <?php if ($user): ?>
-          <a href="/?page=<?= is_admin($user) ? 'admin' : 'account' ?>" class="nav-account"><?= e($user['full_name'] ?: $user['username']) ?></a>
+          <a href="/?page=account" class="nav-account"><?= e($user['full_name'] ?: $user['username']) ?></a>
+          <?php if (is_admin($user)): ?><a href="/?page=admin" class="nav-admin">Admin</a><?php endif; ?>
           <form method="post" class="inline-form" style="margin:0"><input type="hidden" name="action" value="logout"><?= csrf_field() ?><button class="button" style="padding:4px 8px;min-height:auto;font-size:11px">Logout</button></form>
         <?php else: ?>
           <a href="/?page=login" class="nav-account">Sign In</a>
