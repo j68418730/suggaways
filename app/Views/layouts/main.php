@@ -20,6 +20,7 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
   <link rel="stylesheet" href="/assets/css/style.css">
 </head>
 <body>
+  <img src="/assets/img/header2.jpg" alt="Header" style="width:100%;display:block;max-height:400px;object-fit:cover">
   <header class="header">
     <div class="header-inner">
       <a href="/" class="brand">
