@@ -592,7 +592,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $stmt->execute([$productId]);
                         $existing = $stmt->fetchColumn() ?: '[]';
                         $imgs = json_decode($existing, true) ?: [];
-                        $imgs[] = $url;
+                        array_unshift($imgs, $url);
                         db()->prepare('UPDATE products SET images = ? WHERE id = ?')->execute([json_encode($imgs), $productId]);
                         db()->prepare('INSERT INTO product_images (product_id, url) VALUES (?, ?)')->execute([$productId, $url]);
                         session_flash('notice', 'Image uploaded.');
