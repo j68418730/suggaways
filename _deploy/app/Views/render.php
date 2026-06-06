@@ -883,7 +883,11 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
       <div class="account-sidebar">
         <div class="panel">
           <div class="account-avatar">
-            <div class="avatar-placeholder"><?= e(strtoupper(substr($user['full_name'] ?: $user['username'], 0, 2))) ?></div>
+            <?php if (!empty($user['avatar'])): ?>
+              <img src="<?= e($user['avatar']) ?>" alt="Avatar" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--line)">
+            <?php else: ?>
+              <div class="avatar-placeholder"><?= e(strtoupper(substr($user['full_name'] ?: $user['username'], 0, 2))) ?></div>
+            <?php endif; ?>
             <h3><?= e($user['full_name'] ?: $user['username']) ?></h3>
             <p class="hint"><?= e($user['email']) ?></p>
             <span class="badge"><?= e(ucfirst($user['role'])) ?></span>
@@ -967,13 +971,23 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
         <?php elseif ($tab === 'profile'): ?>
           <div class="panel">
             <h2>Profile Settings</h2>
-            <form method="post" class="form" style="max-width:500px">
+            <form method="post" class="form" style="max-width:500px" enctype="multipart/form-data">
               <?= csrf_field() ?>
               <input type="hidden" name="action" value="update_profile">
+              <div class="account-avatar" style="text-align:center;margin-bottom:16px">
+                <?php if (!empty($user['avatar'])): ?>
+                  <img src="<?= e($user['avatar']) ?>" alt="Avatar" style="width:100px;height:100px;border-radius:50%;object-fit:cover;border:2px solid var(--line);margin-bottom:8px">
+                <?php else: ?>
+                  <div class="avatar-placeholder" style="width:100px;height:100px;font-size:36px;margin:0 auto 8px"><?= e(strtoupper(substr($user['full_name'] ?: $user['username'], 0, 2))) ?></div>
+                <?php endif; ?>
+                <label style="display:block;font-size:13px;cursor:pointer;color:var(--accent)">Change Photo<input name="avatar" type="file" accept="image/*" style="display:none" onchange="this.closest('form').querySelector('.avatar-name').textContent=this.files[0].name"></label>
+                <span class="avatar-name hint" style="font-size:11px"></span>
+              </div>
+              <label>Username<input value="<?= e($user['username']) ?>" disabled><span class="hint">Username cannot be changed</span></label>
               <label>Full Name<input name="full_name" value="<?= e($user['full_name'] ?? '') ?>" required></label>
               <label>Email<input value="<?= e($user['email']) ?>" disabled><span class="hint">Email cannot be changed</span></label>
               <label>Phone<input name="phone" value="<?= e($user['phone'] ?? '') ?>"></label>
-              <label>Bio<textarea name="bio"><?= e($user['bio'] ?? '') ?></textarea></label>
+              <label>Bio<textarea name="bio" placeholder="Tell us about yourself..."><?= e($user['bio'] ?? '') ?></textarea></label>
               <button class="button primary" type="submit">Save Changes</button>
             </form>
           </div>

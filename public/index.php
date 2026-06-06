@@ -300,8 +300,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         case 'update_profile':
             if (!$user) { redirect('/?page=login'); }
-            db()->prepare('UPDATE users SET full_name = ?, phone = ?, bio = ? WHERE id = ?')
-                ->execute([$_POST['full_name'], $_POST['phone'], $_POST['bio'], (int)$user['id']]);
+            $avatarUrl = $user['avatar'];
+            if (!empty($_FILES['avatar']['tmp_name']) && $_FILES['avatar']['error'] === UPLOAD_ERR_OK) {
+                $ext = strtolower(pathinfo($_FILES['avatar']['name'], PATHINFO_EXTENSION));
+                $allowed = ['jpg','jpeg','png','gif','webp'];
+                if (in_array($ext, $allowed)) {
+                    $filename = 'avatar-' . $user['id'] . '-' . time() . '.' . $ext;
+                    $dest = dirname(__DIR__) . '/public/assets/img/avatars/' . $filename;
+                    if (!is_dir(dirname($dest))) mkdir(dirname($dest), 0755, true);
+                    if (move_uploaded_file($_FILES['avatar']['tmp_name'], $dest)) {
+                        $avatarUrl = '/assets/img/avatars/' . $filename;
+                    }
+                }
+            }
+            db()->prepare('UPDATE users SET full_name = ?, phone = ?, bio = ?, avatar = ? WHERE id = ?')
+                ->execute([$_POST['full_name'], $_POST['phone'], $_POST['bio'], $avatarUrl, (int)$user['id']]);
             audit('profile_updated', 'users', (string)$user['id']);
             session_flash('notice', 'Profile updated.');
             redirect('/?page=account&tab=profile');
