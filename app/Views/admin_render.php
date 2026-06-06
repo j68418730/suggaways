@@ -199,7 +199,7 @@ function admin_products(array $products, array $categories): void
                 <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;max-height:120px;overflow-y:auto">
                   <?php foreach ($imgUrls as $url): ?>
                     <label style="cursor:pointer;text-align:center;border:2px solid transparent;padding:2px" onmouseover="this.style.borderColor='var(--line)'" onmouseout="this.style.borderColor='transparent'">
-                      <img src="<?= e($url) ?>" style="width:50px;height:50px;object-fit:cover;display:block">
+                      <img src="<?= e($url) ?>" style="width:80px;height:80px;object-fit:cover;display:block;cursor:pointer" onclick="this.requestFullscreen?this.requestFullscreen():window.open(this.src,'_blank')">
                       <input type="radio" name="existing_image" value="<?= e($url) ?>" style="margin-top:2px">
                     </label>
                   <?php endforeach; ?>
@@ -227,7 +227,7 @@ function admin_products(array $products, array $categories): void
             <td><input type="checkbox" class="product-select" form="bulkDeleteForm" name="ids[]" value="<?= (int)$p['id'] ?>" onchange="document.getElementById('bulkDeleteBtn').disabled=!document.querySelectorAll('.product-select:checked').length"></td>
             <td>
               <?php $imgs = json_decode($p['images'] ?? '[]', true); ?>
-              <?php if (!empty($imgs[0])): ?><img src="<?= e($imgs[0]) ?>" style="width:50px;height:50px;object-fit:cover;border:1px solid var(--line-soft)"><?php endif; ?>
+              <?php if (!empty($imgs[0])): ?><img src="<?= e($imgs[0]) ?>" style="width:80px;height:80px;object-fit:cover;border:1px solid var(--line-soft);cursor:pointer" onclick="this.requestFullscreen?this.requestFullscreen():window.open(this.src,'_blank')"><?php endif; ?>
             </td>
             <td><a href="/?page=product&slug=<?= e($p['slug']) ?>"><?= e($p['name']) ?></a></td>
             <td><?= e($p['sku']) ?></td>
