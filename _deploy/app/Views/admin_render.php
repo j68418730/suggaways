@@ -483,6 +483,7 @@ function admin_customers(array $customers): void
               <label>Full Name<input name="full_name" required></label>
               <label>Phone<input name="phone"></label>
             </div>
+            <p class="hint" style="margin:8px 0;color:var(--orange)">Password is auto-generated — it will be shown ONCE after creation. Copy it immediately.</p>
             <button class="button primary" type="submit">Create (auto-generate password)</button>
           </form>
         </div>
@@ -548,6 +549,7 @@ function admin_employees(array $employees): void
                 <option value="webmaster">Webmaster</option>
               </select>
             </label>
+            <p class="hint" style="margin:8px 0;color:var(--orange)">Password is auto-generated — it will be shown ONCE in a notice after creation. Copy it immediately.</p>
             <button class="button primary" type="submit">Create (auto-generate password)</button>
           </form>
         </div>
@@ -1364,7 +1366,7 @@ function admin_signins(array $logs): void
 function admin_pos(array $sessions, ?array $openSession, array $transactions, array $user, array $products = []): void
 {
     $clockedIn = is_clocked_in((int)$user['id']);
-    $products = $products ?: db()->query('SELECT p.*, (SELECT i.stock_quantity FROM inventory i WHERE i.product_id = p.id LIMIT 1) as stock_quantity FROM products p WHERE p.status = "active" ORDER BY p.name ASC LIMIT 200')->fetchAll();
+    $products = $products ?: db()->query('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active" ORDER BY p.name ASC LIMIT 200')->fetchAll();
     $taxRate = (float)site_setting('pos_tax_rate', '0');
     ?>
     <div class="panel">
