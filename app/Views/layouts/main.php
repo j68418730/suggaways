@@ -23,10 +23,7 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
   <img src="/assets/img/header2.jpg" alt="Header" style="width:100%;display:block;max-height:400px;object-fit:cover">
   <header class="header">
     <div class="header-inner">
-      <a href="/" class="brand">
-        <span class="brand-mark"><?= e($siteIcon) ?></span>
-        <span>SUGGAWAYZ</span>
-      </a>
+
       <nav class="nav">
         <a href="/">Home</a>
         <a href="/?page=shop">Shop</a>
