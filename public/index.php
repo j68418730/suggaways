@@ -396,6 +396,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_flash('notice', 'Product deleted.');
             redirect('/?page=admin&tab=products');
 
+        case 'admin_bulk_delete_products':
+            if (!$user || !is_admin($user)) { abort(403); }
+            $ids = array_filter(array_map('intval', (array)($_POST['ids'] ?? [])));
+            if (!empty($ids)) {
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                db()->prepare("DELETE FROM products WHERE id IN ($placeholders)")->execute($ids);
+                audit('products_bulk_deleted', 'products', implode(',', $ids));
+                session_flash('notice', count($ids) . ' products deleted.');
+            }
+            redirect('/?page=admin&tab=products');
+
         case 'admin_add_coming_soon':
             if (!$user || !is_admin($user)) { abort(403); }
             $name = trim($_POST['name']);

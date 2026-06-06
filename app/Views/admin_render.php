@@ -212,10 +212,17 @@ function admin_products(array $products, array $categories): void
       </details>
     </div>
     <div class="panel">
+      <form method="post" id="bulkDeleteForm" style="margin-bottom:12px">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="admin_bulk_delete_products">
+        <button class="button" type="submit" style="border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete selected products?')" id="bulkDeleteBtn" disabled>Delete Selected</button>
+        <label style="font-size:12px;margin-left:8px"><input type="checkbox" id="selectAll" onchange="document.querySelectorAll('.product-select').forEach(function(c){c.checked=this.checked});document.getElementById('bulkDeleteBtn').disabled=!this.checked"> Select All</label>
+      </form>
       <table class="table">
-        <tr><th>Image</th><th>Name</th><th>SKU</th><th>Price</th><th>Stock</th><th>Status</th><th>Upload Image</th><th>Actions</th></tr>
+        <tr><th style="width:30px"></th><th>Image</th><th>Name</th><th>SKU</th><th>Price</th><th>Stock</th><th>Status</th><th>Upload Image</th><th>Actions</th></tr>
         <?php foreach ($products as $p): ?>
           <tr>
+            <td><input type="checkbox" class="product-select" form="bulkDeleteForm" name="ids[]" value="<?= (int)$p['id'] ?>" onchange="document.getElementById('bulkDeleteBtn').disabled=!document.querySelectorAll('.product-select:checked').length"></td>
             <td>
               <?php $imgs = json_decode($p['images'] ?? '[]', true); ?>
               <?php if (!empty($imgs[0])): ?><img src="<?= e($imgs[0]) ?>" style="width:50px;height:50px;object-fit:cover;border:1px solid var(--line-soft)"><?php endif; ?>
