@@ -286,7 +286,7 @@ function admin_products(array $products, array $categories): void
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="admin_delete_product">
                 <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
-                <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete this product?')">Del</button>
+                <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return window.confirm('Delete this product?')">Del</button>
               </form>
             </td>
           </tr>
