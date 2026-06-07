@@ -1039,6 +1039,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_flash('notice', 'Bug report deleted.');
             redirect('/?page=admin&tab=bugreports');
 
+        // === TODOS ===
+        case 'admin_add_todo':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $title = trim((string)$_POST['title']);
+            if ($title) {
+                $stmt = db()->prepare('INSERT INTO todos (title, created_by) VALUES (?, ?)');
+                $stmt->execute([$title, (int)$user['id']]);
+                session_flash('notice', 'Task added.');
+            }
+            redirect('/?page=admin&tab=todos');
+
+        case 'admin_edit_todo':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $title = trim((string)$_POST['title']);
+            if ($title) {
+                db()->prepare('UPDATE todos SET title = ? WHERE id = ?')->execute([$title, (int)$_POST['id']]);
+                session_flash('notice', 'Task updated.');
+            }
+            redirect('/?page=admin&tab=todos');
+
+        case 'admin_delete_todo':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            db()->prepare('DELETE FROM todos WHERE id = ?')->execute([(int)$_POST['id']]);
+            session_flash('notice', 'Task deleted.');
+            redirect('/?page=admin&tab=todos');
+
+        case 'admin_toggle_todo':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            db()->prepare('UPDATE todos SET is_completed = IF(is_completed, 0, 1) WHERE id = ?')->execute([(int)$_POST['id']]);
+            redirect('/?page=admin&tab=todos');
+
+        case 'admin_toggle_todo_active':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            db()->prepare('UPDATE todos SET is_active = IF(is_active, 0, 1) WHERE id = ?')->execute([(int)$_POST['id']]);
+            session_flash('notice', 'Task toggled.');
+            redirect('/?page=admin&tab=todos');
+
         default:
             redirect_back();
     }
@@ -1347,7 +1384,8 @@ case 'shipping':
         if ($openPosSession) {
             $posTransactions = db()->query('SELECT * FROM pos_transactions WHERE pos_session_id = ' . (int)$openPosSession['id'] . ' ORDER BY created_at ASC')->fetchAll();
         }
-        $content = render_admin_dashboard($user, $tab, $stats, $allProducts, $allOrders, $allCustomers, $categories, $allEmployees, $inventory, $locations, $reorderItems, $lowStockProducts, $paymentSettings, $coupons, $auditLogs, $signInLogs, $posSessions, $openPosSession, $posTransactions, $orderSearch);
+        $todos = db()->query('SELECT * FROM todos ORDER BY sort_order ASC, created_at DESC')->fetchAll();
+        $content = render_admin_dashboard($user, $tab, $stats, $allProducts, $allOrders, $allCustomers, $categories, $allEmployees, $inventory, $locations, $reorderItems, $lowStockProducts, $paymentSettings, $coupons, $auditLogs, $signInLogs, $posSessions, $openPosSession, $posTransactions, $orderSearch, $todos);
         break;
 
     case 'bug-report':

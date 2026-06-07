@@ -6,8 +6,9 @@ function render_admin_dashboard(
     array $locations, array $reorderItems, array $lowStockProducts,
     array $paymentSettings, array $coupons, array $auditLogs,
     array $signInLogs, array $posSessions, ?array $openPosSession,
-    array $posTransactions, string $orderSearch
+    array $posTransactions, string $orderSearch, array $todos = []
 ): string {
+    $isSuperAdmin = in_array($user['role'] ?? '', ['webmaster', 'super_admin']);
     $isAdmin = is_admin($user);
     $navLinks = [
         ['tab' => 'dashboard', 'label' => 'Dashboard', 'admin' => false],
@@ -31,6 +32,7 @@ function render_admin_dashboard(
         ['tab' => 'events',    'label' => 'Events',    'admin' => false],
         ['tab' => 'contact',   'label' => 'Contact',   'admin' => true],
         ['tab' => 'shipping',  'label' => 'Shipping',  'admin' => true],
+        ['tab' => 'todos',     'label' => '📋 Todo',    'admin' => true, 'super' => true],
         ['tab' => 'divider2',  'label' => '',           'admin' => false],
         ['tab' => 'settings',  'label' => 'Settings',  'admin' => true],
     ];
@@ -45,6 +47,7 @@ function render_admin_dashboard(
         <nav class="admin-nav">
           <?php foreach ($navLinks as $link): ?>
             <?php if (!$isAdmin && $link['admin']) continue; ?>
+            <?php if (!empty($link['super']) && !$isSuperAdmin) continue; ?>
             <?php if ($link['tab'] === 'divider' || $link['tab'] === 'divider2'): ?>
               <hr style="border-color:var(--line-soft);margin:8px 0">
             <?php else: ?>
@@ -77,6 +80,7 @@ function render_admin_dashboard(
             'events' => admin_events(),
             'contact' => admin_contact(),
             'shipping' => admin_shipping(),
+            'todos' => admin_todos($todos),
             'settings' => admin_settings(),
             default => admin_dashboard($stats, $orders, $lowStockProducts, $products, $customers),
         };
@@ -2021,6 +2025,63 @@ function admin_bug_reports(): void
         <?php endforeach; ?>
         <?php endif; ?>
       </table>
+    </div>
+    <?php
+}
+
+function admin_todos(array $todos): void
+{
+    ?>
+    <div class="panel">
+      <h2>📋 Todo List</h2>
+      <form method="post" style="display:flex;gap:8px;margin-bottom:16px">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="admin_add_todo">
+        <input name="title" placeholder="New task..." required style="flex:1;padding:8px 12px;font-size:13px">
+        <button class="button primary" type="submit" style="padding:8px 16px;min-height:auto">Add</button>
+      </form>
+      <?php if (empty($todos)): ?>
+        <p class="hint">No tasks yet. Add one above.</p>
+      <?php else: ?>
+        <table class="table">
+          <tr><th style="width:30px">✅</th><th>Task</th><th style="width:160px">Actions</th></tr>
+          <?php foreach ($todos as $t): ?>
+            <tr style="<?= $t['is_completed'] ? 'opacity:0.5;text-decoration:line-through' : '' ?>">
+              <td>
+                <form method="post" style="display:inline">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="admin_toggle_todo">
+                  <input type="hidden" name="id" value="<?= (int)$t['id'] ?>">
+                  <input type="checkbox" onchange="this.form.submit()" <?= $t['is_completed'] ? 'checked' : '' ?>>
+                </form>
+              </td>
+              <td>
+                <form method="post" style="display:inline-flex;gap:4px;width:100%">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="admin_edit_todo">
+                  <input type="hidden" name="id" value="<?= (int)$t['id'] ?>">
+                  <input name="title" value="<?= e($t['title']) ?>" style="width:100%;padding:4px 8px;font-size:12px;background:transparent;border:1px solid transparent" onfocus="this.style.borderColor='var(--line)'" onblur="this.style.borderColor='transparent'">
+                  <button class="button" type="submit" style="padding:4px 8px;min-height:auto;font-size:10px">Save</button>
+                </form>
+              </td>
+              <td style="white-space:nowrap">
+                <form method="post" style="display:inline">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="admin_toggle_todo_active">
+                  <input type="hidden" name="id" value="<?= (int)$t['id'] ?>">
+                  <button class="button" type="submit" style="padding:4px 8px;min-height:auto;font-size:10px;border-color:<?= $t['is_active'] ? 'var(--green)' : 'var(--orange)' ?>"><?= $t['is_active'] ? 'On' : 'Off' ?></button>
+                </form>
+                <form method="post" style="display:inline">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="admin_delete_todo">
+                  <input type="hidden" name="id" value="<?= (int)$t['id'] ?>">
+                  <button class="button" type="submit" style="padding:4px 8px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete task?')">Del</button>
+                </form>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+        </table>
+      <?php endif; ?>
     </div>
     <?php
 }
