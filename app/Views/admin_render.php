@@ -38,8 +38,28 @@ function render_admin_dashboard(
     ];
     $employeeViewable = array_values(array_filter(array_map(fn($l) => !$l['admin'] ? $l['tab'] : null, $navLinks)));
     $effectiveTab = ($isAdmin || in_array($tab, $employeeViewable, true)) ? $tab : 'dashboard';
-    ob_start();
-    ?>
+    // Count pending orders
+    $pendingCount = 0;
+    try {
+        $pendingCount = (int)db()->query("SELECT COUNT(*) FROM orders WHERE status='pending'")->fetchColumn();
+    } catch (\Throwable $e) {}
+    ob_start(); ?>
+    <?php if ($isSuperAdmin && (!empty($todos) || $pendingCount > 0)): ?>
+      <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:8px 24px;display:flex;flex-wrap:wrap;gap:8px;font-size:13px;position:sticky;top:0;z-index:99">
+        <?php if ($pendingCount > 0): ?>
+          <a href="/?page=admin&tab=orders&order_search=pending" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:rgba(255,76,76,0.12);border:1px solid rgba(255,76,76,0.3);border-radius:4px;color:var(--red);text-decoration:none">
+            <span>🔔</span> <?= $pendingCount ?> pending order<?= $pendingCount > 1 ? 's' : '' ?>
+          </a>
+        <?php endif; ?>
+        <?php foreach ($todos as $t): ?>
+          <?php if (!$t['is_active']) continue; ?>
+          <a href="/?page=admin&tab=todos" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:<?= $t['is_completed'] ? 'rgba(0,255,136,0.1)' : 'rgba(0,200,255,0.08)' ?>;border:1px solid <?= $t['is_completed'] ? 'rgba(0,255,136,0.3)' : 'rgba(0,200,255,0.2)' ?>;border-radius:4px;color:var(--text);text-decoration:none">
+            <span><?= $t['is_completed'] ? '✅' : '📋' ?></span>
+            <span style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($t['title']) ?></span>
+          </a>
+        <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
     <div class="admin-layout">
       <div class="admin-sidebar panel">
         <h3>Webmaster v2</h3>
