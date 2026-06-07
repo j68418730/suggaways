@@ -28,11 +28,6 @@ function bootstrap_database(): void
         db()->exec(file_get_contents($schema));
     }
 
-    $seed = dirname(__DIR__) . '/database/seed.sql';
-    if (file_exists($seed)) {
-        db()->exec(file_get_contents($seed));
-    }
-
     seed_user('spectre', 'admin', 'webmaster', 'spectre@suggawayz.local', 'SUGGAWAYZ Webmaster');
     seed_user('user', 'admin', 'customer', 'user@suggawayz.local', 'SUGGAWAYZ Customer');
 }
