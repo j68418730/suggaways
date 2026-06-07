@@ -11,7 +11,7 @@ function render_home(array $featured, array $newDrops, array $collections, array
       <?php foreach ($featured as $product): ?>
         <article class="product-card">
           <a href="/?page=product&slug=<?= e($product['slug']) ?>">
-            <div class="product-image" style="background-image: url('<?= e(json_decode($product['images'], true)[0] ?? '/assets/img/background.png') ?>')"></div>
+            <div class="product-image" style="background-image: url('<?= e(json_decode($product['images'], true)[0] ?? '/assets/img/background.png') ?>');background-size:cover;background-position:center"></div>
             <h3><?= e($product['name']) ?></h3>
             <p><?= e($product['short_description'] ?: $product['description']) ?></p>
             <div class="product-meta">
@@ -39,7 +39,7 @@ function render_home(array $featured, array $newDrops, array $collections, array
       <?php foreach ($newDrops as $product): ?>
         <article class="product-card new-badge">
           <a href="/?page=product&slug=<?= e($product['slug']) ?>">
-            <div class="product-image" style="background-image: url('<?= e(json_decode($product['images'], true)[0] ?? '/assets/img/background.png') ?>')"></div>
+            <div class="product-image" style="background-image: url('<?= e(json_decode($product['images'], true)[0] ?? '/assets/img/background.png') ?>');background-size:cover;background-position:center"></div>
             <h3><?= e($product['name']) ?></h3>
             <p><?= e($product['short_description']) ?></p>
             <div class="product-meta">
@@ -134,7 +134,7 @@ function render_shop(array $products, array $categories, ?string $currentCategor
         <?php foreach ($products as $product): ?>
           <article class="product-card <?= $product['is_new'] ? 'new-badge' : '' ?>">
             <a href="/?page=product&slug=<?= e($product['slug']) ?>">
-              <div class="product-image" style="background-image: url('<?= e(json_decode($product['images'], true)[0] ?? '/assets/img/background.png') ?>')"></div>
+              <div class="product-image" style="background-image: url('<?= e(json_decode($product['images'], true)[0] ?? '/assets/img/background.png') ?>');background-size:cover;background-position:center"></div>
               <?php if (!empty($product['category_name'])): ?><span class="badge" style="position:absolute;top:8px;left:8px;z-index:2;font-size:10px"><?= e($product['category_name']) ?></span><?php endif; ?>
               <h3><?= e($product['name']) ?></h3>
               <p><?= e($product['short_description'] ?: $product['description']) ?></p>
@@ -361,7 +361,7 @@ function render_new_drops(array $products): string
       <?php foreach ($products as $product): ?>
         <article class="product-card new-badge">
           <a href="/?page=product&slug=<?= e($product['slug']) ?>">
-            <div class="product-image" style="background-image: url('<?= e(json_decode($product['images'], true)[0] ?? '/assets/img/background.png') ?>')"></div>
+            <div class="product-image" style="background-image: url('<?= e(json_decode($product['images'], true)[0] ?? '/assets/img/background.png') ?>');background-size:cover;background-position:center"></div>
             <h3><?= e($product['name']) ?></h3>
             <p><?= e($product['short_description']) ?></p>
             <div class="product-meta">
