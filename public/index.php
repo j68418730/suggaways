@@ -1074,127 +1074,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('/?page=admin&tab=todos');
 
         case 'admin_delete_todo':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            if (!$user || !is_admin($user)) { abort(403); }
             db()->prepare('DELETE FROM todos WHERE id = ?')->execute([(int)$_POST['id']]);
             session_flash('notice', 'Task deleted.');
             redirect('/?page=admin&tab=todos');
 
-        case 'admin_toggle_todo':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            db()->prepare('UPDATE todos SET is_completed = IF(is_completed, 0, 1) WHERE id = ?')->execute([(int)$_POST['id']]);
-            redirect('/?page=admin&tab=todos');
+        // === ADMIN MEMBERSHIPS ===
+        case 'admin_add_membership_plan':
+            if (!$user || !is_admin($user)) { abort(403); }
+            $benefits = array_filter(array_map('trim', explode("\n", $_POST['benefits'] ?? '')));
+            db()->prepare("INSERT INTO membership_plans (name, description, price, benefits) VALUES (?,?,?,?)")
+                ->execute([$_POST['name'], $_POST['description'], (float)$_POST['price'], json_encode(array_values($benefits))]);
+            session_flash('notice', 'Membership plan created.');
+            redirect('/?page=admin&tab=memberships');
 
-        case 'admin_toggle_todo_active':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            db()->prepare('UPDATE todos SET is_active = IF(is_active, 0, 1) WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Task toggled.');
-            redirect('/?page=admin&tab=todos');
-
-        // === PAYPAL ===
-        case 'paypal_create_order':
-            header('Content-Type: application/json');
-            $user = current_user();
-            if (!$user) {
-                $guestName = trim((string)($_POST['guest_name'] ?? ''));
-                $guestEmail = trim((string)($_POST['guest_email'] ?? ''));
-                if (!$guestName || !$guestEmail) { echo json_encode(['error' => 'Name and email required']); exit; }
-                $stmt = db()->prepare('SELECT id FROM users WHERE email=?');
-                $stmt->execute([$guestEmail]);
-                $existing = $stmt->fetch();
-                if (!$existing) {
-                    db()->prepare('INSERT INTO users (role,username,email,password_hash,full_name) VALUES (?,?,?,?,?)')->execute(['customer','guest_'.bin2hex(random_bytes(6)),$guestEmail,password_hash(bin2hex(random_bytes(16)),PASSWORD_ARGON2ID),$guestName]);
-                    $userId = (int)db()->lastInsertId();
-                    $_SESSION['user_id'] = $userId;
-                } else { $_SESSION['user_id'] = (int)$existing['id']; }
-                $user = current_user();
-            }
-            $items = cart_items();
-            if (empty($items)) { echo json_encode(['error' => 'Cart empty']); exit; }
-            $subtotal = cart_total();
-            $discount = 0.0;
-            $couponCode = $_SESSION['coupon'] ?? null;
-            if ($couponCode) { $result = apply_coupon($couponCode, $subtotal); if ($result['success']) $discount = $result['discount']; }
-            $taxRate = config('app.tax_rate', 8.25);
-            $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
-            $total = round($subtotal - $discount + $tax, 2);
-
-            $cfg = db()->query("SELECT public_key, secret_key FROM payment_settings WHERE provider='paypal'")->fetch();
-            $ch = curl_init('https://api-m.sandbox.paypal.com/v1/oauth2/token');
-            curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_USERPWD=>$cfg['public_key'].':'.$cfg['secret_key'], CURLOPT_POSTFIELDS=>'grant_type=client_credentials']);
-            $auth = json_decode(curl_exec($ch), true);
-            curl_close($ch);
-            $token = $auth['access_token'] ?? '';
-            if (!$token) { echo json_encode(['error' => 'PayPal auth failed']); exit; }
-
-            $ch2 = curl_init('https://api-m.sandbox.paypal.com/v2/checkout/orders');
-            curl_setopt_array($ch2, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_HTTPHEADER=>['Content-Type: application/json','Authorization: Bearer '.$token], CURLOPT_POSTFIELDS=>json_encode(['intent'=>'CAPTURE','purchase_units'=>[['amount'=>['currency_code'=>'USD','value'=>number_format($total,2,'.','')]]]])]);
-            $order = json_decode(curl_exec($ch2), true);
-            curl_close($ch2);
-            echo json_encode(['id' => $order['id'] ?? null, 'error' => $order['message'] ?? null]);
-            exit;
-
-        case 'paypal_capture_order':
-            header('Content-Type: application/json');
-            $user = current_user();
-            if (!$user) { echo json_encode(['success'=>false, 'error'=>'Login required']); exit; }
-            $paypalOrderId = $_POST['order_id'] ?? '';
-            if (!$paypalOrderId) { echo json_encode(['success'=>false, 'error'=>'No order ID']); exit; }
-
-            $cfg = db()->query("SELECT public_key, secret_key FROM payment_settings WHERE provider='paypal'")->fetch();
-            $ch = curl_init('https://api-m.sandbox.paypal.com/v1/oauth2/token');
-            curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_USERPWD=>$cfg['public_key'].':'.$cfg['secret_key'], CURLOPT_POSTFIELDS=>'grant_type=client_credentials']);
-            $auth = json_decode(curl_exec($ch), true);
-            curl_close($ch);
-            $token = $auth['access_token'] ?? '';
-            if (!$token) { echo json_encode(['success'=>false, 'error'=>'PayPal auth failed']); exit; }
-
-            $ch2 = curl_init("https://api-m.sandbox.paypal.com/v2/checkout/orders/$paypalOrderId/capture");
-            curl_setopt_array($ch2, [CURLOPT_RETURNTRANSFER=>true, CURLOPT_HTTPHEADER=>['Content-Type: application/json','Authorization: Bearer '.$token], CURLOPT_POSTFIELDS=>'{}']);
-            $capture = json_decode(curl_exec($ch2), true);
-            curl_close($ch2);
-
-            if (($capture['status'] ?? '') === 'COMPLETED') {
-                // Create the local order
-                $addressId = (int)($_POST['address_id'] ?? 0);
-                $shippingMethod = (string)$_POST['shipping_method'];
-                $notes = trim((string)$_POST['notes']);
-                $items = cart_items();
-                $subtotal = cart_total();
-                $couponCode = $_SESSION['coupon'] ?? null;
-                $discount = 0.0;
-                if ($couponCode) { $result = apply_coupon($couponCode, $subtotal); if ($result['success']) $discount = $result['discount']; }
-                $taxRate = config('app.tax_rate', 8.25);
-                $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
-                $stmt = db()->prepare('SELECT * FROM shipping WHERE id=? AND active=1');
-                $stmt->execute([(int)$shippingMethod]);
-                $shippingRow = $stmt->fetch() ?: null;
-                $shippingCost = $shippingRow ? (float)$shippingRow['base_rate'] : 0.0;
-                $total = $subtotal - $discount + $tax + $shippingCost;
-                $orderNumber = generate_order_number();
-                $hasPreorders = cart_has_preorders();
-
-                db()->beginTransaction();
-                try {
-                    $s = db()->prepare('INSERT INTO orders (user_id, order_number, order_type, status, subtotal, discount, coupon_code, tax, shipping, total, shipping_address_id, shipping_method, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)');
-                    $s->execute([(int)$user['id'], $orderNumber, $hasPreorders?'preorder':'standard', 'paid', $subtotal, $discount, $couponCode, $tax, $shippingCost, $total, $addressId?:null, $shippingRow['service_name']??null, $notes]);
-                    $orderId = (int)db()->lastInsertId();
-                    foreach ($items as $item) {
-                        if (!empty($item['is_preorder'])) continue;
-                        db()->prepare('INSERT INTO order_items (order_id, product_id, product_name, sku, size, color, quantity, unit_price, line_total, image_url) VALUES (?,?,?,?,?,?,?,?,?,?)')->execute([$orderId, $item['product_id'], $item['name'], '', $item['size']??null, $item['color']??null, $item['quantity'], $item['price'], $item['price']*$item['quantity'], $item['image']??null]);
-                    }
-                    db()->prepare('INSERT INTO payments (order_id, provider, status, amount, currency) VALUES (?,?,?,?,?)')->execute([$orderId, 'paypal', 'paid', $total, 'USD']);
-                    if (!empty($_SESSION['user_id'])) db()->prepare('DELETE FROM cart WHERE user_id=?')->execute([(int)$_SESSION['user_id']]);
-                    $_SESSION['cart'] = []; cart_clear_preorders(); unset($_SESSION['coupon']);
-                    db()->commit();
-                    echo json_encode(['success'=>true, 'redirect'=>'/?page=order-confirmed&order='.$orderNumber]);
-                } catch (Exception $e) {
-                    db()->rollBack();
-                    echo json_encode(['success'=>false, 'error'=>'Order creation failed']);
-                }
-            } else {
-                echo json_encode(['success'=>false, 'error'=>'Payment not completed']);
-            }
-            exit;
+        case 'admin_generate_invoice':
+            if (!$user || !is_admin($user)) { abort(403); }
+            $uid = (int)$_POST['user_id'];
+            $amount = (float)($_POST['amount'] ?? 35);
+            $invNum = 'INV-MEM-' . time() . '-' . $uid;
+            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")->execute([$uid, $invNum, $amount]);
+            session_flash('notice', "Invoice $invNum generated.");
+            redirect('/?page=admin&tab=memberships');
 
         default:
             redirect_back();
@@ -1514,6 +1415,19 @@ case 'shipping':
         }
         $todos = db()->query('SELECT * FROM todos ORDER BY sort_order ASC, created_at DESC')->fetchAll();
         $content = render_admin_dashboard($user, $tab, $stats, $allProducts, $allOrders, $allCustomers, $categories, $allEmployees, $inventory, $locations, $reorderItems, $lowStockProducts, $paymentSettings, $coupons, $auditLogs, $signInLogs, $posSessions, $openPosSession, $posTransactions, $orderSearch, $todos);
+        break;
+
+    case 'membership':
+        $plans = db()->query('SELECT * FROM membership_plans WHERE is_active=1 ORDER BY sort_order')->fetchAll();
+        $userMembership = null;
+        if ($user) {
+            $stmt = db()->prepare("SELECT m.*, p.name as plan_name FROM user_memberships m JOIN membership_plans p ON p.id=m.plan_id WHERE m.user_id=? AND m.status='active' LIMIT 1");
+            $stmt->execute([(int)$user['id']]);
+            $userMembership = $stmt->fetch() ?: null;
+        }
+        $seo_title = 'Membership';
+        $hero_class = 'hero-sub';
+        $content = render_membership_page($plans, $userMembership);
         break;
 
     case 'bug-report':

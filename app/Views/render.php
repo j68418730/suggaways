@@ -1366,3 +1366,53 @@ function render_bug_report_form(): string
     <?php
     return ob_get_clean();
 }
+
+function render_membership_page(array $plans, ?array $userMembership): string
+{
+    ob_start(); ?>
+    <section class="page-title">
+      <div class="container">
+        <h1>🔥 Sugga Gang Membership</h1>
+        <p class="hint">Join the gang. Get early access, exclusive gear, and monthly perks.</p>
+      </div>
+    </section>
+    <section class="container" style="margin-top:24px">
+      <?php if ($userMembership && $userMembership['status'] === 'active'): ?>
+        <div class="panel" style="border-color:var(--green);text-align:center">
+          <h2>You're a Member! 🎉</h2>
+          <p><?= e($userMembership['plan_name']) ?> — Active since <?= e(date('F j, Y', strtotime($userMembership['start_date']))) ?></p>
+          <p class="hint"><?= $userMembership['auto_pay'] ? 'Auto-pay is ON' : 'Auto-pay is OFF' ?></p>
+        </div>
+      <?php endif; ?>
+      <div class="product-grid">
+        <?php foreach ($plans as $plan): ?>
+          <div class="panel product-card" style="text-align:center;padding:32px 20px">
+            <h2 style="font-size:24px;margin-bottom:8px"><?= e($plan['name']) ?></h2>
+            <p style="font-size:36px;font-weight:800;color:var(--cyan);margin:16px 0">$<?= e(number_format((float)$plan['price'], 2)) ?><span style="font-size:14px;color:var(--muted)">/<?= e($plan['billing_interval'] ?? 'monthly') ?></span></p>
+            <p style="margin:12px 0"><?= e($plan['description']) ?></p>
+            <ul style="text-align:left;margin:16px 0;list-style:none;padding:0">
+              <?php $benefits = json_decode($plan['benefits'] ?? '[]', true); ?>
+              <?php foreach ($benefits as $b): ?>
+                <li style="padding:4px 0">✅ <?= e($b) ?></li>
+              <?php endforeach; ?>
+            </ul>
+            <?php if ($userMembership && $userMembership['status'] === 'active'): ?>
+              <span class="badge" style="background:var(--green)">Enrolled</span>
+            <?php else: ?>
+              <form method="post">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="join_membership">
+                <input type="hidden" name="plan_id" value="<?= (int)$plan['id'] ?>">
+                <button class="button primary" type="submit" style="width:100%">Join Now</button>
+                <label style="display:flex;align-items:center;gap:6px;justify-content:center;margin-top:8px;font-size:12px;color:var(--muted);cursor:pointer">
+                  <input type="checkbox" name="auto_pay" value="1" checked> Auto-pay monthly
+                </label>
+              </form>
+            <?php endif; ?>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    </section>
+    <?php
+    return ob_get_clean();
+}

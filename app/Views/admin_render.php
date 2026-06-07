@@ -32,6 +32,7 @@ function render_admin_dashboard(
         ['tab' => 'events',    'label' => 'Events',    'admin' => false],
         ['tab' => 'contact',   'label' => 'Contact',   'admin' => true],
         ['tab' => 'shipping',  'label' => 'Shipping',  'admin' => true],
+        ['tab' => 'memberships','label' => '👥 Members','admin' => true, 'super' => true],
         ['tab' => 'todos',     'label' => '📋 Todo',    'admin' => true, 'super' => true],
         ['tab' => 'divider2',  'label' => '',           'admin' => false],
         ['tab' => 'settings',  'label' => 'Settings',  'admin' => true],
@@ -101,6 +102,7 @@ function render_admin_dashboard(
             'contact' => admin_contact(),
             'shipping' => admin_shipping(),
             'todos' => admin_todos($todos),
+            'memberships' => admin_memberships(),
             'settings' => admin_settings(),
             default => admin_dashboard($stats, $orders, $lowStockProducts, $products, $customers),
         };
@@ -2078,6 +2080,88 @@ function admin_bug_reports(): void
           </tr>
         <?php endforeach; ?>
         <?php endif; ?>
+      </table>
+    </div>
+    <?php
+}
+
+function admin_invoice_members(): void
+{
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['user_id'])) {
+        $uid = (int)$_POST['user_id'];
+        $amount = (float)($_POST['amount'] ?? 35);
+        $invNum = 'INV-MEM-' . time() . '-' . $uid;
+        db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")->execute([$uid, $invNum, $amount]);
+        $user = db()->prepare("SELECT email, full_name FROM users WHERE id=?")->execute([$uid]) ? db()->query("SELECT email, full_name FROM users WHERE id=$uid")->fetch() : null;
+        session_flash('notice', 'Invoice ' . $invNum . ' generated for ' . ($user['full_name'] ?? 'User') . '.');
+        redirect('/?page=admin&tab=memberships');
+    }
+}
+
+function admin_memberships(): void
+{
+    $plans = db()->query('SELECT * FROM membership_plans ORDER BY sort_order')->fetchAll();
+    $members = db()->query("SELECT m.*, u.username, u.email, u.full_name, p.name as plan_name FROM user_memberships m JOIN users u ON u.id=m.user_id JOIN membership_plans p ON p.id=m.plan_id ORDER BY m.created_at DESC")->fetchAll();
+    $invoices = db()->query('SELECT i.*, u.full_name, u.email FROM membership_invoices i JOIN users u ON u.id=i.user_id ORDER BY i.created_at DESC LIMIT 50')->fetchAll();
+    ?>
+    <div class="panel">
+      <h2>👥 Memberships</h2>
+      <details>
+        <summary class="button primary" style="display:inline-block;cursor:pointer;margin-bottom:16px">+ New Plan</summary>
+        <div style="margin-top:16px">
+          <form method="post" class="form" style="max-width:400px">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="admin_add_membership_plan">
+            <label>Plan Name<input name="name" required></label>
+            <label>Price ($)<input name="price" type="number" step="0.01" required></label>
+            <label>Description<textarea name="description" rows="3"></textarea></label>
+            <label>Benefits (one per line)<textarea name="benefits" rows="4" placeholder="Early access&#10;Free T-shirt&#10;15% off orders"></textarea></label>
+            <button class="button primary" type="submit">Create Plan</button>
+          </form>
+        </div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <h3>Active Members</h3>
+      <table class="table">
+        <tr><th>Name</th><th>Email</th><th>Plan</th><th>Status</th><th>Auto-Pay</th><th>Joined</th><th>Invoice</th></tr>
+        <?php foreach ($members as $m): ?>
+          <tr>
+            <td><?= e($m['full_name'] ?: $m['username']) ?></td>
+            <td><?= e($m['email']) ?></td>
+            <td><?= e($m['plan_name']) ?></td>
+            <td><span class="status-<?= e($m['status']) ?>"><?= e(ucfirst($m['status'])) ?></span></td>
+            <td><?= $m['auto_pay'] ? '✅' : '—' ?></td>
+            <td><?= e(date('M j, Y', strtotime($m['created_at']))) ?></td>
+            <td>
+              <form method="post" style="display:inline-flex;gap:4px">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="admin_generate_invoice">
+                <input type="hidden" name="user_id" value="<?= (int)$m['user_id'] ?>">
+                <input name="amount" value="<?= e((float)$m['price'] ?? 35) ?>" style="width:60px;padding:2px 4px;font-size:11px">
+                <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px">Invoice</button>
+              </form>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h3>Invoices</h3>
+      <table class="table">
+        <tr><th>Invoice #</th><th>Member</th><th>Amount</th><th>Status</th><th>Due</th><th>Created</th></tr>
+        <?php foreach ($invoices as $inv): ?>
+          <tr>
+            <td><?= e($inv['invoice_number']) ?></td>
+            <td><?= e($inv['full_name'] ?: $inv['email']) ?></td>
+            <td>$<?= e(number_format((float)$inv['amount'], 2)) ?></td>
+            <td><span class="status-<?= e($inv['status']) ?>"><?= e(ucfirst($inv['status'])) ?></span></td>
+            <td><?= $inv['due_date'] ? e(date('M j, Y', strtotime($inv['due_date']))) : '—' ?></td>
+            <td><?= e(date('M j, Y', strtotime($inv['created_at']))) ?></td>
+          </tr>
+        <?php endforeach; ?>
       </table>
     </div>
     <?php
