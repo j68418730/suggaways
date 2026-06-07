@@ -932,17 +932,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$user || !is_admin($user)) { abort(403); }
             $subject = trim((string)$_POST['subject']);
             $body = trim((string)$_POST['body']);
-            if (empty($subject) || empty($body)) { session_flash('error', 'Subject and body required.'); redirect('/?page=admin&tab=settings'); }
-            $subs = db()->query('SELECT email FROM subscribers WHERE is_active = 1')->fetchAll(PDO::FETCH_COLUMN);
-            if (empty($subs)) { session_flash('error', 'No active subscribers.'); redirect('/?page=admin&tab=settings'); }
+            if (empty($subject) || empty($body)) { session_flash('error', 'Subject and body required.'); redirect('/?page=admin&tab=newsletter'); }
             $htmlBody = nl2br(e($body));
+            // Add footer with unsubscribe link
+            $htmlBody .= '<br><br><hr><p style="font-size:11px;color:#888">You\'re receiving this because you subscribed to SUGGAWAYZ updates. <a href="https://suggawayz.com/?action=unsubscribe&email=%email%">Unsubscribe</a></p>';
+
+            if (!empty($_POST['test_email'])) {
+                $email = $user['email'];
+                if (send_email($email, "[TEST] " . $subject, str_replace('%email%', $email, $htmlBody))) {
+                    session_flash('notice', 'Test email sent to ' . $email);
+                } else {
+                    session_flash('error', 'Failed to send test email. Check SMTP settings.');
+                }
+                redirect('/?page=admin&tab=newsletter');
+            }
+
+            $subs = db()->query('SELECT email FROM subscribers WHERE is_active = 1')->fetchAll(PDO::FETCH_COLUMN);
+            if (empty($subs)) { session_flash('error', 'No active subscribers.'); redirect('/?page=admin&tab=newsletter'); }
             $sent = 0; $failed = 0;
             foreach ($subs as $email) {
-                if (send_email($email, $subject, $htmlBody)) $sent++; else $failed++;
+                $personalized = str_replace('%email%', $email, $htmlBody);
+                if (send_email($email, $subject, $personalized)) $sent++; else $failed++;
             }
             db()->prepare("INSERT INTO newsletter_sent (subject, body, recipient_count, sent_by) VALUES (?,?,?,?)")->execute([$subject, $body, $sent, (int)$user['id']]);
             session_flash('notice', "Email sent to {$sent} subscribers" . ($failed ? ", {$failed} failed." : '.'));
-            redirect('/?page=admin&tab=settings');
+            redirect('/?page=admin&tab=newsletter');
 
         // === POS ===
         case 'clock_in':
@@ -1095,6 +1109,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")->execute([$uid, $invNum, $amount]);
             session_flash('notice', "Invoice $invNum generated.");
             redirect('/?page=admin&tab=memberships');
+
+        case 'admin_notify_member_drops':
+            if (!$user || !is_admin($user)) { abort(403); }
+            $notified = 0;
+            $drops = db()->query("SELECT id, name, DATE(release_date) as rdate FROM coming_soon WHERE is_notified=0 AND release_date IS NOT NULL")->fetchAll();
+            $members = db()->query("SELECT u.email, u.full_name FROM user_memberships m JOIN users u ON u.id=m.user_id WHERE m.status='active'")->fetchAll();
+            foreach ($drops as $drop) {
+                $daysUntil = (int)db()->query("SELECT DATEDIFF('{$drop['rdate']}', CURDATE())")->fetchColumn();
+                if ($daysUntil <= 10 && $daysUntil >= 0) {
+                    foreach ($members as $member) {
+                        $body = "Hey {$member['full_name']},<br><br>🔥 <strong>{$drop['name']}</strong> drops in {$daysUntil} days!<br><br>As a Sugga Gang member, you get early access. Stay tuned for your exclusive link.<br><br>— SUGGAWAYZ";
+                        if (send_email($member['email'], "🔔 Early Access: {$drop['name']} dropping soon!", $body)) $notified++;
+                    }
+                    db()->prepare("UPDATE coming_soon SET is_notified=1 WHERE id=?")->execute([(int)$drop['id']]);
+                }
+            }
+            session_flash('notice', "Notified {$notified} members about " . count($drops) . " upcoming drops.");
+            redirect('/?page=admin&tab=newsletter');
 
         default:
             redirect_back();

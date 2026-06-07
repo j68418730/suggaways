@@ -32,6 +32,7 @@ function render_admin_dashboard(
         ['tab' => 'events',    'label' => '📅 Events',    'admin' => false],
         ['tab' => 'contact',   'label' => '📧 Contact',   'admin' => true],
         ['tab' => 'shipping',  'label' => '🚚 Shipping',  'admin' => true],
+        ['tab' => 'newsletter','label' => '📧 Newsletter','admin' => true],
         ['tab' => 'memberships','label' => '👥 Members',  'admin' => true, 'super' => true],
         ['tab' => 'todos',     'label' => '✅ Todo',      'admin' => true, 'super' => true],
         ['tab' => 'divider2',  'label' => '',              'admin' => false],
@@ -102,6 +103,7 @@ function render_admin_dashboard(
             'contact' => admin_contact(),
             'shipping' => admin_shipping(),
             'todos' => admin_todos($todos),
+            'newsletter' => admin_newsletter(),
             'memberships' => admin_memberships(),
             'settings' => admin_settings(),
             default => admin_dashboard($stats, $orders, $lowStockProducts, $products, $customers),
@@ -2182,6 +2184,71 @@ function admin_memberships(): void
         <?php endforeach; ?>
       </table>
     </div>
+    <?php
+}
+
+function admin_newsletter(): void
+{
+    $products = db()->query("SELECT id, name, slug, price, sale_price FROM products WHERE status='active' ORDER BY name")->fetchAll();
+    $drops = db()->query("SELECT id, name, release_date, price FROM coming_soon ORDER BY created_at DESC LIMIT 20")->fetchAll();
+    $newsletters = db()->query('SELECT * FROM newsletter_sent ORDER BY created_at DESC LIMIT 20')->fetchAll();
+    ?>
+    <div class="panel">
+      <h2>📧 Compose Newsletter</h2>
+      <form method="post" class="form" style="max-width:100%">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="admin_send_bulk_email">
+        <label>Subject<input name="subject" required placeholder="Newsletter subject" style="font-size:16px"></label>
+        <label style="margin-top:12px">Content
+          <textarea name="body" id="nlBody" required rows="12" style="font-size:13px;font-family:var(--mono)" placeholder="Write your newsletter here...&#10;&#10;Use the buttons below to add product links."></textarea>
+        </label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">
+          <strong style="font-size:12px;padding:6px 0">Add Product Link:</strong>
+          <?php foreach ($products as $p): ?>
+            <button type="button" class="button" style="padding:4px 8px;min-height:auto;font-size:10px" onclick="insertLink('[<?= e($p['name']) ?>](<?= e('/?page=product&slug='.$p['slug']) ?>)')"><?= e(substr($p['name'], 0, 20)) ?></button>
+          <?php endforeach; ?>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">
+          <strong style="font-size:12px;padding:6px 0">Add New Drop Link:</strong>
+          <?php foreach ($drops as $d): ?>
+            <button type="button" class="button" style="padding:4px 8px;min-height:auto;font-size:10px;border-color:var(--cyan)" onclick="insertLink('[<?= e($d['name']) ?>](<?= e('/?page=shop&category=new-drops') ?>)')"><?= e($d['name']) ?></button>
+          <?php endforeach; ?>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="button primary" type="submit">Send to All Subscribers</button>
+          <button class="button" type="submit" name="test_email" value="1" style="border-color:var(--cyan)">Send Test to Me</button>
+        </div>
+      </form>
+    </div>
+    <div class="panel">
+      <h3>Member Drop Notifications</h3>
+      <p class="hint">Send early access alerts to active members for upcoming drops (within 10 days).</p>
+      <form method="post">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="admin_notify_member_drops">
+        <button class="button primary" type="submit">🔔 Notify Members About Upcoming Drops</button>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h3>Sent Newsletters</h3>
+      <table class="table" style="font-size:12px">
+        <tr><th>Subject</th><th>Sent To</th><th>Date</th></tr>
+        <?php foreach ($newsletters as $n): ?>
+          <tr><td><?= e($n['subject']) ?></td><td><?= (int)$n['recipient_count'] ?> subs</td><td><?= e(date('M j, Y g:i A', strtotime($n['created_at']))) ?></td></tr>
+        <?php endforeach; ?>
+        <?php if (empty($newsletters)): ?><tr><td colspan="3"><em>No newsletters sent yet.</em></td></tr><?php endif; ?>
+      </table>
+    </div>
+    <script>
+    function insertLink(md) {
+      var ta = document.getElementById('nlBody');
+      var start = ta.selectionStart, end = ta.selectionEnd;
+      ta.value = ta.value.substring(0, start) + md + ta.value.substring(end);
+      ta.selectionStart = ta.selectionEnd = start + md.length;
+      ta.focus();
+    }
+    </script>
     <?php
 }
 
