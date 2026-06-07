@@ -696,6 +696,7 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
     $cashtag = '';
     $pmt = db()->query("SELECT extra_settings FROM payment_settings WHERE provider = 'cash_app'")->fetchColumn();
     if ($pmt) { $extra = json_decode($pmt, true); $cashtag = $extra['cashtag'] ?? ''; }
+    $paypalClientId = db()->query("SELECT public_key FROM payment_settings WHERE provider='paypal'")->fetchColumn();
     ob_start(); ?>
     <div class="checkout-layout">
       <div class="checkout-form">
@@ -784,14 +785,15 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
           <div class="panel">
             <h3>Payment Method</h3>
             <div class="payment-methods-grid">
-              <label class="payment-option"><input type="radio" name="payment_method" value="stripe" checked onchange="toggleCashApp()"> <span>Credit/Debit Card</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="paypal" onchange="toggleCashApp()"> <span>PayPal</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="square" onchange="toggleCashApp()"> <span>Square</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="cash_app" onchange="toggleCashApp()"> <span>Cash App</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="apple_pay" onchange="toggleCashApp()"> <span>Apple Pay</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="google_pay" onchange="toggleCashApp()"> <span>Google Pay</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="bank_transfer" onchange="toggleCashApp()"> <span>Bank Transfer</span></label>
+              <label class="payment-option"><input type="radio" name="payment_method" value="stripe" checked onchange="toggleCashApp();togglePayPal()"> <span>Credit/Debit Card</span></label>
+              <label class="payment-option"><input type="radio" name="payment_method" value="paypal" onchange="toggleCashApp();togglePayPal()"> <span>PayPal</span></label>
+              <label class="payment-option"><input type="radio" name="payment_method" value="square" onchange="toggleCashApp();togglePayPal()"> <span>Square</span></label>
+              <label class="payment-option"><input type="radio" name="payment_method" value="cash_app" onchange="toggleCashApp();togglePayPal()"> <span>Cash App</span></label>
+              <label class="payment-option"><input type="radio" name="payment_method" value="apple_pay" onchange="toggleCashApp();togglePayPal()"> <span>Apple Pay</span></label>
+              <label class="payment-option"><input type="radio" name="payment_method" value="google_pay" onchange="toggleCashApp();togglePayPal()"> <span>Google Pay</span></label>
+              <label class="payment-option"><input type="radio" name="payment_method" value="bank_transfer" onchange="toggleCashApp();togglePayPal()"> <span>Bank Transfer</span></label>
             </div>
+            <div id="paypal-button-container" style="display:none;margin-top:16px"></div>
           </div>
 
           <div class="panel">
@@ -799,7 +801,7 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
             <textarea name="notes" placeholder="Special instructions, delivery preferences..." style="min-height:80px"></textarea>
           </div>
 
-          <button type="submit" class="button primary" style="width:100%;text-align:center;padding:18px">Place Order — $<?= e(number_format($total, 2)) ?></button>
+          <button type="submit" class="button primary" style="width:100%;text-align:center;padding:18px" id="placeOrderBtn">Place Order — $<?= e(number_format($total, 2)) ?></button>
         </form>
       </div>
 
@@ -821,6 +823,7 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
         <div class="summary-row total"><span>Total</span><span>$<?= e(number_format($total, 2)) ?></span></div>
       </div>
     </div>
+    <script src="https://www.paypal.com/sdk/js?client-id=<?= e($paypalClientId) ?>&currency=USD" data-sdk-integration-source="button-factory"></script>
     <script>
     function toggleCashApp() {
       var sel = document.querySelector('input[name="payment_method"]:checked');
@@ -834,7 +837,34 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
         inputs.forEach(function(el) { el.required = false; });
       }
     }
+    function togglePayPal() {
+      var sel = document.querySelector('input[name="payment_method"]:checked');
+      var container = document.getElementById('paypal-button-container');
+      var btn = document.getElementById('placeOrderBtn');
+      if (sel && sel.value === 'paypal') {
+        container.style.display = 'block';
+        btn.style.display = 'none';
+        if (!container.hasChildNodes()) {
+          paypal.Buttons({
+            createOrder: function(data, actions) {
+              return fetch('/?action=paypal_create_order', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'csrf=' + encodeURIComponent(document.querySelector('input[name=\"csrf\"]').value) }).then(function(r) { return r.json(); }).then(function(d) { return d.id; });
+            },
+            onApprove: function(data, actions) {
+              var form = document.querySelector('.checkout-form form');
+              var fd = new FormData(form);
+              fd.append('order_id', data.orderID);
+              fd.append('csrf', document.querySelector('input[name=\"csrf\"]').value);
+              return fetch('/?action=paypal_capture_order', { method: 'POST', body: new URLSearchParams(fd) }).then(function(r) { return r.json(); }).then(function(d) { if (d.success) window.location = d.redirect; });
+            }
+          }).render('#paypal-button-container');
+        }
+      } else {
+        container.style.display = 'none';
+        btn.style.display = '';
+      }
+    }
     toggleCashApp();
+    togglePayPal();
     </script>
     <?php
     return ob_get_clean();
