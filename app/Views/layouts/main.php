@@ -45,6 +45,13 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
     </div>
   </header>
 
+  <?php $flashNotice = session_flash('notice'); $flashError = session_flash('error'); ?>
+  <?php if ($flashNotice): ?>
+    <div class="flash flash-ok" style="text-align:center;padding:10px;background:rgba(0,255,136,0.1);border-bottom:1px solid rgba(0,255,136,0.3);color:var(--green);font-size:13px"><?= e($flashNotice) ?></div>
+  <?php endif; ?>
+  <?php if ($flashError): ?>
+    <div class="flash flash-bad" style="text-align:center;padding:10px;background:rgba(255,76,76,0.1);border-bottom:1px solid rgba(255,76,76,0.3);color:var(--red);font-size:13px"><?= e($flashError) ?></div>
+  <?php endif; ?>
   <main class="main <?= $hero_class ?? '' ?>">
     <?= $content ?? '' ?>
   </main>
