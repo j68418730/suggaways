@@ -391,9 +391,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         case 'admin_delete_product':
             if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM products WHERE id = ?')->execute([(int)$_POST['id']]);
-            audit('product_deleted', 'products', (string)$_POST['id']);
-            session_flash('notice', 'Product deleted.');
+            $delId = (int)$_POST['id'];
+            $stmt = db()->prepare('DELETE FROM products WHERE id = ?');
+            $stmt->execute([$delId]);
+            $affected = $stmt->rowCount();
+            if ($affected > 0) {
+                audit('product_deleted', 'products', (string)$delId);
+                session_flash('notice', "Product ID $delId deleted.");
+            } else {
+                session_flash('error', "Product ID $delId not found or already deleted.");
+            }
             redirect('/?page=admin&tab=products');
 
         case 'admin_bulk_delete_products':
