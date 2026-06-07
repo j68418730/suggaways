@@ -46,7 +46,35 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
   </header>
 
   <?php if (site_setting('maintenance_mode')): ?>
-    <div style="text-align:center;padding:8px;background:rgba(255,170,51,0.15);border-bottom:1px solid rgba(255,170,51,0.3);color:var(--orange);font-size:13px">🔧 Under Construction — Some features might be limited.</div>
+    <div id="maintBanner" style="text-align:center;padding:12px;background:rgba(0,200,255,0.08);border-bottom:1px solid rgba(0,200,255,0.2);color:var(--cyan);font-size:13px;font-family:var(--mono);line-height:1.7">
+      <span id="maintText"></span>
+    </div>
+    <script>
+    (function(){
+      var lines = [
+        '> SYSTEM INITIALIZING...',
+        '> Some features are still under construction while we finalize the SUGGAWAYZ experience.',
+        '> If you need to place an order, feel free to contact us via Facebook.'
+      ];
+      var el = document.getElementById('maintText');
+      var lineIdx = 0, charIdx = 0;
+      function type() {
+        if (lineIdx >= lines.length) return;
+        var line = lines[lineIdx];
+        if (charIdx < line.length) {
+          el.textContent += line[charIdx];
+          charIdx++;
+          setTimeout(type, 25 + Math.random() * 30);
+        } else {
+          el.textContent += '\n';
+          lineIdx++;
+          charIdx = 0;
+          setTimeout(type, 400);
+        }
+      }
+      type();
+    })();
+    </script>
   <?php endif; ?>
   <?php $flashNotice = session_flash('notice'); $flashError = session_flash('error'); ?>
   <?php if ($flashNotice): ?>
