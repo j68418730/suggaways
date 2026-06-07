@@ -1761,6 +1761,7 @@ function admin_pos(array $sessions, ?array $openSession, array $transactions, ar
 
 function admin_settings(): void
 {
+    $subtab = $_GET['subtab'] ?? 'billing';
     $config = db()->prepare('SELECT * FROM payment_settings WHERE provider = ?');
     $config->execute(['prepay']);
     $cfg = $config->fetch();
@@ -1780,12 +1781,25 @@ function admin_settings(): void
     $socialLinks = json_decode($socialRaw, true);
     $socialPlatforms = ['instagram','tiktok','twitter','youtube','facebook'];
     $socialLabels = ['instagram'=>'Instagram','tiktok'=>'TikTok','twitter'=>'Twitter / X','youtube'=>'YouTube','facebook'=>'Facebook'];
+    $subTabs = [
+        'billing' => 'Billing',
+        'branding' => 'Branding',
+        'email' => 'Email',
+        'integrations' => 'Integrations',
+    ];
     ?>
     <div class="panel">
       <h2>Settings</h2>
-      <p class="hint">Configuration for testing, billing, branding, and integrations.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin:12px 0">
+        <?php foreach ($subTabs as $key => $label): ?>
+          <a href="/?page=admin&tab=settings&subtab=<?= $key ?>" class="button" style="padding:6px 14px;min-height:auto;font-size:12px;<?= $subtab === $key ? 'background:rgba(0,200,255,0.15);border-color:var(--cyan);color:var(--cyan)' : '' ?>"><?= e($label) ?></a>
+        <?php endforeach; ?>
+      </div>
+    </div>
 
-      <h3 style="margin-top:20px">Prepay (Testing)</h3>
+    <?php if ($subtab === 'billing'): ?>
+    <div class="panel">
+      <h3>Prepay (Testing)</h3>
       <p class="hint">Use this to test carts and billing without real payments.</p>
       <div class="grid two" style="margin-top:16px">
         <div>
@@ -1848,6 +1862,7 @@ function admin_settings(): void
         <?php endforeach; ?>
       </table>
     </div>
+    <?php elseif ($subtab === 'branding'): ?>
 
     <div class="panel">
       <h3>Site Branding</h3>
@@ -1864,6 +1879,7 @@ function admin_settings(): void
       </form>
     </div>
 
+    <?php endif; ?><?php if ($subtab === 'branding'): ?>
     <div class="panel">
       <h3>Social Links</h3>
       <p class="hint">Link your social media accounts and toggle visibility in the footer.</p>
@@ -1927,6 +1943,7 @@ function admin_settings(): void
       </table>
     </div>
 
+    <?php elseif ($subtab === 'email'): ?>
     <div class="panel">
       <h3>Email Settings (SMTP)</h3>
       <p class="hint">Configure SMTP for sending emails to subscribers and customers.</p>
@@ -1975,6 +1992,7 @@ function admin_settings(): void
       </form>
     </div>
 
+    <?php elseif ($subtab === 'integrations'): ?>
     <div class="panel">
       <h3>Maintenance Mode</h3>
       <p class="hint">When ON, shows a notice under the menu that the site is under construction.</p>
@@ -2006,6 +2024,7 @@ function admin_settings(): void
         <button class="button primary" type="submit">Save Printer Settings</button>
       </form>
     </div>
+    <?php endif; ?>
     <?php
 }
 
