@@ -248,7 +248,7 @@ function admin_products(array $products, array $categories): void
         <tr><th style="width:30px"></th><th>Image</th><th>Name</th><th>SKU</th><th>Price</th><th>Stock</th><th>Status</th><th>Upload Image</th><th>Actions</th></tr>
         <?php foreach ($products as $p): ?>
           <tr>
-            <td><input type="checkbox" class="product-select" form="bulkDeleteForm" name="ids[]" value="<?= (int)$p['id'] ?>" onchange="document.getElementById('bulkDeleteBtn').disabled=!document.querySelectorAll('.product-select:checked').length"></td>
+            <td style="text-align:center;font-size:11px;color:var(--text2)"><input type="checkbox" class="product-select" form="bulkDeleteForm" name="ids[]" value="<?= (int)$p['id'] ?>" onchange="document.getElementById('bulkDeleteBtn').disabled=!document.querySelectorAll('.product-select:checked').length"><br><span>#<?= (int)$p['id'] ?></span></td>
             <td>
               <?php $imgs = json_decode($p['images'] ?? '[]', true); ?>
               <?php if (!empty($imgs[0])): ?><img src="<?= e($imgs[0]) ?>" style="width:80px;height:80px;object-fit:cover;border:1px solid var(--line-soft);cursor:pointer" onclick="this.requestFullscreen?this.requestFullscreen():window.open(this.src,'_blank')"><?php endif; ?>
@@ -286,7 +286,7 @@ function admin_products(array $products, array $categories): void
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="admin_delete_product">
                 <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
-                <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return window.confirm('Delete this product?')">Del</button>
+                <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete this product?')">Del</button>
               </form>
             </td>
           </tr>

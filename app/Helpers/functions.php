@@ -67,9 +67,11 @@ function csrf_token(): string
 function verify_csrf(): void
 {
     $token = $_POST['csrf'] ?? '';
-    if (!is_string($token) || !hash_equals(csrf_token(), $token)) {
+    if (empty($token) || !is_string($token) || !hash_equals(csrf_token(), $token)) {
         session_flash('error', 'Session expired or security token invalid. Please try again.');
-        redirect_back();
+        $ref = $_SERVER['HTTP_REFERER'] ?? '/';
+        header("Location: {$ref}", true, 302);
+        exit;
     }
 }
 

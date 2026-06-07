@@ -1,6 +1,9 @@
 <?php
 declare(strict_types=1);
 
+$sessPath = dirname(__DIR__) . '/storage/sessions';
+if (!is_dir($sessPath)) { @mkdir($sessPath, 0755, true); }
+session_save_path($sessPath);
 session_start([
     'cookie_httponly' => true,
     'cookie_samesite' => 'Lax',
