@@ -1120,23 +1120,31 @@ switch ($page) {
         $categorySlug = $_GET['category'] ?? null;
         $sort = $_GET['sort'] ?? 'newest';
         $search = trim($_GET['search'] ?? '');
-        $sql = 'SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active"';
+        $page = max(1, (int)($_GET['p'] ?? 1));
+        $perPage = 12;
+        $offset = ($page - 1) * $perPage;
+
+        // Count total
+        $countSql = 'SELECT COUNT(*) FROM products p WHERE p.status = "active"';
+        $countParams = [];
+        if ($categorySlug) { $countSql .= ' AND p.category_id = (SELECT id FROM categories WHERE slug = ?)'; $countParams[] = $categorySlug; }
+        if ($search) { $countSql .= ' AND (p.name LIKE ? OR p.description LIKE ?)'; $countParams[] = "%{$search}%"; $countParams[] = "%{$search}%"; }
+        $totalProducts = (int)db()->prepare($countSql)->execute($countParams) ? db()->query('SELECT FOUND_ROWS()')->fetchColumn() : 0;
+        $stmt2 = db()->prepare($countSql); $stmt2->execute($countParams);
+        $totalProducts = (int)$stmt2->fetchColumn();
+        $totalPages = max(1, (int)ceil($totalProducts / $perPage));
+
+        $sql = 'SELECT p.*, i.stock_quantity, c.name as category_name FROM products p LEFT JOIN inventory i ON i.product_id = p.id LEFT JOIN categories c ON c.id = p.category_id WHERE p.status = "active"';
         $params = [];
-        if ($categorySlug) {
-            $sql .= ' AND p.category_id = (SELECT id FROM categories WHERE slug = ?)';
-            $params[] = $categorySlug;
-        }
-        if ($search) {
-            $sql .= ' AND (p.name LIKE ? OR p.description LIKE ?)';
-            $params[] = "%{$search}%";
-            $params[] = "%{$search}%";
-        }
+        if ($categorySlug) { $sql .= ' AND p.category_id = (SELECT id FROM categories WHERE slug = ?)'; $params[] = $categorySlug; }
+        if ($search) { $sql .= ' AND (p.name LIKE ? OR p.description LIKE ?)'; $params[] = "%{$search}%"; $params[] = "%{$search}%"; }
         $sql .= match($sort) {
-            'price-low' => ' ORDER BY p.sale_price IS NOT NULL, COALESCE(p.sale_price, p.price) ASC',
-            'price-high' => ' ORDER BY p.sale_price IS NOT NULL, COALESCE(p.sale_price, p.price) DESC',
+            'price-low' => ' ORDER BY COALESCE(p.sale_price, p.price) ASC',
+            'price-high' => ' ORDER BY COALESCE(p.sale_price, p.price) DESC',
             'name' => ' ORDER BY p.name ASC',
             default => ' ORDER BY p.created_at DESC',
         };
+        $sql .= " LIMIT $perPage OFFSET $offset";
         $stmt = db()->prepare($sql);
         $stmt->execute($params);
         $allProducts = $stmt->fetchAll();
@@ -1146,7 +1154,7 @@ switch ($page) {
         $seo_description = $seo_settings['meta_description'] ?? null;
         $hero_class = 'hero-shop';
         $hero_content = '<p class="eyebrow">The Collection</p><h1>Shop All</h1><p>Explore the latest drops and classic essentials.</p>';
-        $content = render_shop($allProducts, $categories, $categorySlug, $sort, $search);
+        $content = render_shop($allProducts, $categories, $categorySlug, $sort, $search, $page, $totalPages);
         break;
 
     case 'product':

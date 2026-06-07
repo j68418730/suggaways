@@ -100,7 +100,7 @@ function render_home(array $featured, array $newDrops, array $collections, array
     return ob_get_clean();
 }
 
-function render_shop(array $products, array $categories, ?string $currentCategory, string $sort, string $search): string
+function render_shop(array $products, array $categories, ?string $currentCategory, string $sort, string $search, int $page = 1, int $totalPages = 1): string
 {
     ob_start(); ?>
     <div class="shop-controls">
@@ -135,6 +135,7 @@ function render_shop(array $products, array $categories, ?string $currentCategor
           <article class="product-card <?= $product['is_new'] ? 'new-badge' : '' ?>">
             <a href="/?page=product&slug=<?= e($product['slug']) ?>">
               <div class="product-image" style="background-image: url('<?= e(json_decode($product['images'], true)[0] ?? '/assets/img/background.png') ?>')"></div>
+              <?php if (!empty($product['category_name'])): ?><span class="badge" style="position:absolute;top:8px;left:8px;z-index:2;font-size:10px"><?= e($product['category_name']) ?></span><?php endif; ?>
               <h3><?= e($product['name']) ?></h3>
               <p><?= e($product['short_description'] ?: $product['description']) ?></p>
               <div class="product-meta">
@@ -151,6 +152,19 @@ function render_shop(array $products, array $categories, ?string $currentCategor
           </article>
         <?php endforeach; ?>
       </section>
+      <?php if ($totalPages > 1): ?>
+        <div class="pagination" style="display:flex;justify-content:center;gap:6px;margin-top:24px">
+          <?php if ($page > 1): ?>
+            <a href="?page=shop<?= $currentCategory ? '&category=' . e($currentCategory) : '' ?><?= $search ? '&search=' . e($search) : '' ?>&sort=<?= e($sort) ?>&p=<?= $page - 1 ?>" class="button" style="padding:8px 14px;min-height:auto">&laquo; Prev</a>
+          <?php endif; ?>
+          <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+            <a href="?page=shop<?= $currentCategory ? '&category=' . e($currentCategory) : '' ?><?= $search ? '&search=' . e($search) : '' ?>&sort=<?= e($sort) ?>&p=<?= $i ?>" class="button <?= $i === $page ? 'primary' : '' ?>" style="padding:8px 14px;min-height:auto"><?= $i ?></a>
+          <?php endfor; ?>
+          <?php if ($page < $totalPages): ?>
+            <a href="?page=shop<?= $currentCategory ? '&category=' . e($currentCategory) : '' ?><?= $search ? '&search=' . e($search) : '' ?>&sort=<?= e($sort) ?>&p=<?= $page + 1 ?>" class="button" style="padding:8px 14px;min-height:auto">Next &raquo;</a>
+          <?php endif; ?>
+        </div>
+      <?php endif; ?>
     <?php endif; ?>
     <?php
     return ob_get_clean();
@@ -180,6 +194,7 @@ function render_product_detail(array $product, array $images, array $sizes, arra
       <div class="product-info">
         <p class="eyebrow"><?= e($product['sku']) ?></p>
         <h2><?= e($product['name']) ?></h2>
+        <?php if (!empty($product['category_name'])): ?><a href="/?page=shop&category=<?= e($product['category_slug'] ?? '') ?>" class="badge" style="display:inline-block;margin-bottom:8px"><?= e($product['category_name']) ?></a><?php endif; ?>
         <div class="rating">
           <?php for ($i = 1; $i <= 5; $i++): ?>
             <span class="star <?= $i <= round((float)$ratingData['avg_rating']) ? 'filled' : '' ?>">★</span>
