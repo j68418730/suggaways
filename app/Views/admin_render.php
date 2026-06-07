@@ -1976,6 +1976,19 @@ function admin_settings(): void
     </div>
 
     <div class="panel">
+      <h3>Maintenance Mode</h3>
+      <p class="hint">When ON, shows a notice under the menu that the site is under construction.</p>
+      <form method="post" class="inline-form" style="gap:8px;align-items:center;margin-top:8px">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="admin_toggle_maintenance">
+        <label class="checkbox-label" style="font-size:14px">
+          <input type="checkbox" name="enabled" value="1" <?= site_setting('maintenance_mode') ? 'checked' : '' ?> onchange="this.form.submit()">
+          Maintenance Mode
+        </label>
+      </form>
+    </div>
+
+    <div class="panel">
       <h3>Printer Setup</h3>
       <p class="hint">Configure a receipt printer for POS end-of-day reports.</p>
       <form method="post" class="form" style="max-width:400px">

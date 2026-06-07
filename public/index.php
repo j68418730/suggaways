@@ -869,6 +869,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_flash('notice', $enabled ? 'Prepay enabled.' : 'Prepay disabled.');
             redirect('/?page=admin&tab=settings');
 
+        case 'admin_toggle_maintenance':
+            if (!$user || !is_admin($user)) { abort(403); }
+            $enabled = !empty($_POST['enabled']) ? '1' : '0';
+            set_site_setting('maintenance_mode', $enabled);
+            session_flash('notice', $enabled ? 'Maintenance mode ON.' : 'Maintenance mode OFF.');
+            redirect('/?page=admin&tab=settings');
+
         case 'admin_add_prepay':
             if (!$user || !is_admin($user)) { abort(403); }
             $amount = (float)$_POST['amount'];

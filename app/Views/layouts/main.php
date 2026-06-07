@@ -45,6 +45,9 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
     </div>
   </header>
 
+  <?php if (site_setting('maintenance_mode')): ?>
+    <div style="text-align:center;padding:8px;background:rgba(255,170,51,0.15);border-bottom:1px solid rgba(255,170,51,0.3);color:var(--orange);font-size:13px">🔧 Under Construction — Some features might be limited.</div>
+  <?php endif; ?>
   <?php $flashNotice = session_flash('notice'); $flashError = session_flash('error'); ?>
   <?php if ($flashNotice): ?>
     <div class="flash flash-ok" style="text-align:center;padding:10px;background:rgba(0,255,136,0.1);border-bottom:1px solid rgba(0,255,136,0.3);color:var(--green);font-size:13px"><?= e($flashNotice) ?></div>
