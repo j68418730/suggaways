@@ -763,7 +763,7 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
                 <p><code>$<?= e($cashtag) ?></code></p>
                 <p class="hint">Amount: <strong>$<?= e(number_format($total, 2)) ?></strong></p>
                 <div id="cashapp-qr" style="margin-top:8px">
-                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=cash.app%2F$<?= e(urlencode($cashtag)) ?>%2F<?= e($total) ?>" alt="Cash App QR" style="border-radius:8px;max-width:200px">
+                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https%3A%2F%2Fcash.app%2F%24<?= e(urlencode($cashtag)) ?>" alt="Cash App QR" style="border-radius:8px;max-width:200px">
                   <p class="hint" style="margin-top:4px">Scan with your phone to pay</p>
                 </div>
               </div>
@@ -865,7 +865,7 @@ function render_order_confirmed(array $order, array $items): string
         <h3>Cash App Payment</h3>
         <p class="hint">Scan this QR code with the Cash App to complete your payment.</p>
         <div style="margin:16px 0">
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=cash.app%2F$<?= e(urlencode($cashtag)) ?>%2F<?= e((float)$order['total']) ?>" alt="Cash App QR" style="border-radius:8px;max-width:250px">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https%3A%2F%2Fcash.app%2F%24<?= e(urlencode($cashtag)) ?>" alt="Cash App QR" style="border-radius:8px;max-width:250px">
         </div>
         <p><strong>Amount:</strong> $<?= e(number_format((float)$order['total'], 2)) ?></p>
         <p><strong>Pay to:</strong> <code>$<?= e($cashtag) ?></code></p>
