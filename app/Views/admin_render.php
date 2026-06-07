@@ -223,7 +223,7 @@ function admin_products(array $products, array $categories): void
                 <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;max-height:120px;overflow-y:auto">
                   <?php foreach ($imgUrls as $url): ?>
                     <label style="cursor:pointer;text-align:center;border:2px solid transparent;padding:2px" onmouseover="this.style.borderColor='var(--line)'" onmouseout="this.style.borderColor='transparent'">
-                      <img src="<?= e($url) ?>" style="width:80px;height:80px;object-fit:cover;display:block;cursor:pointer" onclick="this.requestFullscreen?this.requestFullscreen():window.open(this.src,'_blank')">
+                      <img src="<?= e($url) ?>" style="width:80px;height:80px;object-fit:cover;display:block;cursor:pointer" onclick="var m=document.getElementById('pImg');if(!m){m=document.createElement('div');m.id='pImg';m.style='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer';m.onclick=function(){this.remove()};document.body.appendChild(m)};m.innerHTML='<img src=\\\"'+this.src+'\\\" style=\\\"width:150px;height:150px;object-fit:cover;border-radius:8px;border:2px solid var(--line)\\\">'">
                       <input type="radio" name="existing_image" value="<?= e($url) ?>" style="margin-top:2px">
                     </label>
                   <?php endforeach; ?>
@@ -251,7 +251,7 @@ function admin_products(array $products, array $categories): void
             <td style="text-align:center;font-size:11px;color:var(--text2)"><input type="checkbox" class="product-select" form="bulkDeleteForm" name="ids[]" value="<?= (int)$p['id'] ?>" onchange="document.getElementById('bulkDeleteBtn').disabled=!document.querySelectorAll('.product-select:checked').length"><br><span>#<?= (int)$p['id'] ?></span></td>
             <td>
               <?php $imgs = json_decode($p['images'] ?? '[]', true); ?>
-              <?php if (!empty($imgs[0])): ?><img src="<?= e($imgs[0]) ?>" style="width:80px;height:80px;object-fit:cover;border:1px solid var(--line-soft);cursor:pointer" onclick="this.requestFullscreen?this.requestFullscreen():window.open(this.src,'_blank')"><?php endif; ?>
+              <?php if (!empty($imgs[0])): ?><img src="<?= e($imgs[0]) ?>" style="width:80px;height:80px;object-fit:cover;border:1px solid var(--line-soft);cursor:pointer" onclick="var m=document.getElementById('pImg');if(!m){m=document.createElement('div');m.id='pImg';m.style='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer';m.onclick=function(){this.remove()};document.body.appendChild(m)};m.innerHTML='<img src=\\\"'+this.src+'\\\" style=\\\"width:150px;height:150px;object-fit:cover;border-radius:8px;border:2px solid var(--line)\\\">'"><?php endif; ?>
             </td>
             <td><a href="/?page=product&slug=<?= e($p['slug']) ?>"><?= e($p['name']) ?></a></td>
             <td><?= e($p['sku']) ?></td>
