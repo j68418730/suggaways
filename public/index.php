@@ -935,13 +935,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (empty($subject) || empty($body)) { session_flash('error', 'Subject and body required.'); redirect('/?page=admin&tab=settings'); }
             $subs = db()->query('SELECT email FROM subscribers WHERE is_active = 1')->fetchAll(PDO::FETCH_COLUMN);
             if (empty($subs)) { session_flash('error', 'No active subscribers.'); redirect('/?page=admin&tab=settings'); }
-            $from = site_setting('email_from_address', 'noreply@suggawayz.com');
-            $fromName = site_setting('email_from_name', 'SUGGAWAYZ');
-            $headers = 'From: ' . $fromName . ' <' . $from . '>' . "\r\n" . 'Content-Type: text/html; charset=utf-8' . "\r\n";
+            $htmlBody = nl2br(e($body));
             $sent = 0; $failed = 0;
             foreach ($subs as $email) {
-                if (mail($email, $subject, nl2br(e($body)), $headers)) $sent++; else $failed++;
+                if (send_email($email, $subject, $htmlBody)) $sent++; else $failed++;
             }
+            db()->prepare("INSERT INTO newsletter_sent (subject, body, recipient_count, sent_by) VALUES (?,?,?,?)")->execute([$subject, $body, $sent, (int)$user['id']]);
             session_flash('notice', "Email sent to {$sent} subscribers" . ($failed ? ", {$failed} failed." : '.'));
             redirect('/?page=admin&tab=settings');
 

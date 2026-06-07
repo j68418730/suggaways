@@ -1945,6 +1945,24 @@ function admin_settings(): void
       </table>
     </div>
 
+    <div class="panel">
+      <h3>Newsletter History</h3>
+      <table class="table" style="font-size:12px">
+        <tr><th>Subject</th><th>Sent To</th><th>Date</th></tr>
+        <?php $newsletters = db()->query('SELECT * FROM newsletter_sent ORDER BY created_at DESC LIMIT 20')->fetchAll(); ?>
+        <?php foreach ($newsletters as $n): ?>
+          <tr>
+            <td><?= e($n['subject']) ?></td>
+            <td><?= (int)$n['recipient_count'] ?> subscribers</td>
+            <td><?= e(date('M j, Y g:i A', strtotime($n['created_at']))) ?></td>
+          </tr>
+        <?php endforeach; ?>
+        <?php if (empty($newsletters)): ?>
+          <tr><td colspan="3"><em>No newsletters sent yet.</em></td></tr>
+        <?php endif; ?>
+      </table>
+    </div>
+
     <?php elseif ($subtab === 'email'): ?>
     <div class="panel">
       <h3>Email Settings (SMTP)</h3>

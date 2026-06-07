@@ -482,11 +482,65 @@ function apply_coupon(string $code, float $subtotal): array
 
 function send_email(string $to, string $subject, string $body): bool
 {
+    $host = site_setting('email_smtp_host', '');
+    if ($host) {
+        return send_email_smtp($to, $subject, $body);
+    }
     $headers = "From: noreply@suggawayz.com\r\n";
     $headers .= "Reply-To: support@suggawayz.com\r\n";
     $headers .= "MIME-Version: 1.0\r\n";
     $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
     return mail($to, $subject, $body, $headers);
+}
+
+function send_email_smtp(string $to, string $subject, string $body): bool
+{
+    $host = site_setting('email_smtp_host', '');
+    $port = (int)site_setting('email_smtp_port', '587');
+    $user = site_setting('email_smtp_username', '');
+    $pass = site_setting('email_smtp_password', '');
+    $enc = site_setting('email_smtp_encryption', 'tls');
+    $from = site_setting('email_from_address', $user ?: 'noreply@suggawayz.com');
+    $fromName = site_setting('email_from_name', 'SUGGAWAYZ');
+
+    if (!$host || !$user || !$pass) return false;
+
+    $prefix = ($enc === 'ssl') ? 'ssl://' : '';
+    $errno = 0; $errstr = '';
+    $fp = @fsockopen($prefix . $host, $port, $errno, $errstr, 15);
+    if (!$fp) return false;
+
+    $response = '';
+    $smtp_ok = function($fp, $expected = 250) use (&$response) {
+        $response = fgets($fp, 512);
+        return (int)substr($response, 0, 3) === $expected;
+    };
+
+    fread($fp, 512); // server banner
+    fwrite($fp, "EHLO suggawayz.com\r\n"); fflush($fp); $smtp_ok($fp);
+
+    if ($enc === 'tls') {
+        fwrite($fp, "STARTTLS\r\n"); fflush($fp);
+        if (!$smtp_ok($fp, 220)) { fclose($fp); return false; }
+        stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+        fwrite($fp, "EHLO suggawayz.com\r\n"); fflush($fp); $smtp_ok($fp);
+    }
+
+    fwrite($fp, "AUTH LOGIN\r\n"); fflush($fp); $smtp_ok($fp, 334);
+    fwrite($fp, base64_encode($user) . "\r\n"); fflush($fp); $smtp_ok($fp, 334);
+    fwrite($fp, base64_encode($pass) . "\r\n"); fflush($fp); $smtp_ok($fp, 235);
+
+    fwrite($fp, "MAIL FROM:<{$from}>\r\n"); fflush($fp); $smtp_ok($fp);
+    fwrite($fp, "RCPT TO:<{$to}>\r\n"); fflush($fp); $smtp_ok($fp);
+    fwrite($fp, "DATA\r\n"); fflush($fp); $smtp_ok($fp, 354);
+
+    $headers = "From: {$fromName} <{$from}>\r\nReply-To: {$from}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n";
+    fwrite($fp, "Subject: {$subject}\r\n{$headers}\r\n{$body}\r\n.\r\n"); fflush($fp);
+    $result = $smtp_ok($fp);
+
+    fwrite($fp, "QUIT\r\n"); fflush($fp);
+    fclose($fp);
+    return $result;
 }
 
 function view(string $view, array $data = [], bool $direct = false): string
