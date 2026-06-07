@@ -2007,22 +2007,11 @@ function admin_settings(): void
     </div>
 
     <div class="panel">
-      <h3>Printer Setup</h3>
-      <p class="hint">Configure a receipt printer for POS end-of-day reports.</p>
-      <form method="post" class="form" style="max-width:400px">
-        <?= csrf_field() ?>
-        <input type="hidden" name="action" value="admin_update_site_settings">
-        <label>Printer Type
-          <select name="printer_type">
-            <option value="none" <?= site_setting('printer_type', 'none') === 'none' ? 'selected' : '' ?>>No Printer</option>
-            <option value="network" <?= site_setting('printer_type') === 'network' ? 'selected' : '' ?>>Network (IP)</option>
-            <option value="usb" <?= site_setting('printer_type') === 'usb' ? 'selected' : '' ?>>USB</option>
-          </select>
-        </label>
-        <label>IP Address<input name="printer_ip" value="<?= e(site_setting('printer_ip')) ?>" placeholder="192.168.1.100"></label>
-        <label>Port<input name="printer_port" value="<?= e(site_setting('printer_port', '9100')) ?>" placeholder="9100"></label>
-        <button class="button primary" type="submit">Save Printer Settings</button>
-      </form>
+      <h3>Printing</h3>
+      <p class="hint">POS reports and receipts use your browser's print dialog. Click the <strong>Print Report</strong> or <strong>Print</strong> button on any POS page to print to your local printer.</p>
+      <div style="padding:12px;background:rgba(0,200,255,0.06);border:1px solid rgba(0,200,255,0.15);border-radius:4px;margin-top:8px">
+        <p style="font-size:13px">💡 <strong>Tip:</strong> Use <kbd style="padding:2px 6px;background:var(--surface2);border:1px solid var(--border);border-radius:3px;font-size:11px">Ctrl+P</kbd> or <kbd style="padding:2px 6px;background:var(--surface2);border:1px solid var(--border);border-radius:3px;font-size:11px">Cmd+P</kbd> to open the print dialog from any page.</p>
+      </div>
     </div>
     <?php endif; ?>
     <?php
