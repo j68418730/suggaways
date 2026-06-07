@@ -68,9 +68,8 @@ function verify_csrf(): void
 {
     $token = $_POST['csrf'] ?? '';
     if (!is_string($token) || !hash_equals(csrf_token(), $token)) {
-        http_response_code(419);
-        view('errors.419', ['message' => 'Security check failed. Refresh and try again.'], true);
-        exit;
+        session_flash('error', 'Session expired or security token invalid. Please try again.');
+        redirect_back();
     }
 }
 
