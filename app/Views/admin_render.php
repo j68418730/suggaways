@@ -2437,11 +2437,22 @@ function admin_security(): void
     <div class="panel">
       <h3>💾 Database Backup</h3>
       <p class="hint">Creates a full SQL dump. Max 2 backups — oldest is overwritten.</p>
-      <form method="post" style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <?= csrf_field() ?>
-        <input type="hidden" name="action" value="admin_create_backup">
-        <button class="button primary" type="submit">Create Backup Now</button>
-      </form>
+      <div id="backupSection">
+        <form method="post" style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap" id="backupForm" onsubmit="return startBackup()">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="admin_create_backup">
+          <button class="button primary" type="submit" id="backupBtn">Create Backup Now</button>
+        </form>
+        <div id="backupProgress" style="display:none;margin-top:12px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px">
+            <span id="backupStatus">Starting backup...</span>
+            <span id="backupPercent">0%</span>
+          </div>
+          <div style="width:100%;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden">
+            <div id="backupBar" style="width:0%;height:100%;background:linear-gradient(90deg,var(--cyan),var(--blue));border-radius:4px;transition:width 0.3s"></div>
+          </div>
+        </div>
+      </div>
       <?php if (!empty($backups)): ?>
         <div style="margin-top:12px">
           <?php foreach (array_slice($backups, 0, 2) as $b): $bpath = $backupDir . '/' . $b; ?>
@@ -2452,9 +2463,36 @@ function admin_security(): void
           <?php endforeach; ?>
         </div>
       <?php else: ?>
-        <p class="hint" style="margin-top:8px">No backups yet.</p>
+        <p class="hint" style="margin-top:8px" id="noBackupMsg">No backups yet.</p>
       <?php endif; ?>
     </div>
+    <script>
+    function startBackup() {
+      var btn = document.getElementById('backupBtn');
+      var progress = document.getElementById('backupProgress');
+      var bar = document.getElementById('backupBar');
+      var pct = document.getElementById('backupPercent');
+      var status = document.getElementById('backupStatus');
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+      progress.style.display = 'block';
+
+      var steps = ['Connecting to database...', 'Exporting tables...', 'Writing backup file...', 'Finalizing...'];
+      var i = 0;
+      var timer = setInterval(function() {
+        var p = Math.min(95, (i / steps.length) * 100);
+        bar.style.width = p + '%';
+        pct.textContent = Math.round(p) + '%';
+        if (i < steps.length) status.textContent = steps[i];
+        i++;
+        if (i >= steps.length) {
+          clearInterval(timer);
+          status.textContent = 'Almost done...';
+        }
+      }, 600);
+      return true;
+    }
+    </script>
     <div class="panel">
       <h3>Quick Fixes</h3>
       <form method="post" class="form" style="max-width:400px">
