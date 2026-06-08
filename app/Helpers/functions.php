@@ -228,6 +228,14 @@ function set_site_setting(string $key, string $value): void
 
 function login_user(string $username, string $password): bool
 {
+    // Rate limiting: max 5 failed attempts in 15 minutes
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $attempts = db()->prepare("SELECT COUNT(*) FROM sign_in_log WHERE ip_address = ? AND status = 'failed' AND created_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    $attempts->execute([$ip]);
+    if ((int)$attempts->fetchColumn() >= 5) {
+        return false;
+    }
+
     $stmt = db()->prepare('SELECT * FROM users WHERE username = ? OR email = ? LIMIT 1');
     $stmt->execute([$username, $username]);
     $user = $stmt->fetch();
@@ -478,6 +486,21 @@ function apply_coupon(string $code, float $subtotal): array
         'coupon' => $coupon,
         'discount' => $discount,
     ];
+}
+
+function validate_uploaded_image(array $file): ?string
+{
+    if (empty($file['tmp_name']) || $file['error'] !== UPLOAD_ERR_OK) return null;
+    $allowedExts = ['jpg','jpeg','png','gif','webp'];
+    $allowedMimes = ['image/jpeg','image/png','image/gif','image/webp'];
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+    if (!in_array($ext, $allowedExts) || !in_array($mime, $allowedMimes)) return null;
+    // Reject files over 5MB
+    if ($file['size'] > 5 * 1024 * 1024) return null;
+    return $ext;
 }
 
 function send_email(string $to, string $subject, string $body): bool

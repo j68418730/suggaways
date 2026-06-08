@@ -301,10 +301,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'update_profile':
             if (!$user) { redirect('/?page=login'); }
             $avatarUrl = $user['avatar'];
-            if (!empty($_FILES['avatar']['tmp_name']) && $_FILES['avatar']['error'] === UPLOAD_ERR_OK) {
-                $ext = strtolower(pathinfo($_FILES['avatar']['name'], PATHINFO_EXTENSION));
-                $allowed = ['jpg','jpeg','png','gif','webp'];
-                if (in_array($ext, $allowed)) {
+            if (!empty($_FILES['avatar']['tmp_name'])) {
+                $ext = validate_uploaded_image($_FILES['avatar']);
+                if ($ext) {
                     $filename = 'avatar-' . $user['id'] . '-' . time() . '.' . $ext;
                     $dest = dirname(__DIR__) . '/public/assets/img/avatars/' . $filename;
                     if (!is_dir(dirname($dest))) mkdir(dirname($dest), 0755, true);
@@ -346,9 +345,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Determine product image
             $imageUrl = '/assets/img/products/swag.jpg';
-            if (!empty($_FILES['product_image']['tmp_name']) && $_FILES['product_image']['error'] === UPLOAD_ERR_OK) {
-                $ext = strtolower(pathinfo($_FILES['product_image']['name'], PATHINFO_EXTENSION));
-                if (in_array($ext, ['jpg','jpeg','png','gif','webp'])) {
+            if (!empty($_FILES['product_image']['tmp_name'])) {
+                $ext = validate_uploaded_image($_FILES['product_image']);
+                if ($ext) {
                     $filename = 'product-' . time() . '-' . bin2hex(random_bytes(4)) . '.' . $ext;
                     $dest = dirname(__DIR__) . '/public/assets/img/products/' . $filename;
                     if (move_uploaded_file($_FILES['product_image']['tmp_name'], $dest)) {
@@ -587,10 +586,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'admin_upload_product_image':
             if (!$user || !is_admin($user)) { abort(403); }
             $productId = (int)$_POST['product_id'];
-            if (!empty($_FILES['image']['tmp_name']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
-                $ext = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
-                $allowed = ['jpg','jpeg','png','gif','webp'];
-                if (in_array($ext, $allowed)) {
+            if (!empty($_FILES['image']['tmp_name'])) {
+                $ext = validate_uploaded_image($_FILES['image']);
+                if ($ext) {
                     $filename = 'product-' . $productId . '-' . time() . '.' . $ext;
                     $dest = dirname(__DIR__) . '/public/assets/img/products/' . $filename;
                     if (move_uploaded_file($_FILES['image']['tmp_name'], $dest)) {
@@ -1035,9 +1033,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pageUrl = trim((string)$_POST['page_url']);
             $screenshotPath = null;
 
-            if (!empty($_FILES['screenshot']['tmp_name']) && $_FILES['screenshot']['error'] === UPLOAD_ERR_OK) {
-                $ext = strtolower(pathinfo($_FILES['screenshot']['name'], PATHINFO_EXTENSION));
-                if (in_array($ext, ['jpg','jpeg','png','gif','webp'])) {
+            if (!empty($_FILES['screenshot']['tmp_name'])) {
+                $ext = validate_uploaded_image($_FILES['screenshot']);
+                if ($ext) {
                     $filename = 'bug-' . time() . '-' . bin2hex(random_bytes(4)) . '.' . $ext;
                     $dest = dirname(__DIR__) . '/public/assets/img/bugs/' . $filename;
                     $bugDir = dirname(__DIR__) . '/public/assets/img/bugs';
