@@ -1227,27 +1227,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             redirect('/?page=admin&tab=security');
 
-        case 'admin_download_backup':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $file = basename($_GET['file'] ?? '');
-            $path = dirname(__DIR__) . '/storage/backups/' . $file;
-            if ($file && file_exists($path) && str_starts_with(realpath($path), realpath(dirname(__DIR__) . '/storage/backups'))) {
-                header('Content-Type: application/octet-stream');
-                header('Content-Disposition: attachment; filename="' . $file . '"');
-                header('Content-Length: ' . filesize($path));
-                readfile($path);
-            } else {
-                session_flash('error', 'Backup not found.');
-                redirect('/?page=admin&tab=security');
-            }
-            exit;
-
         default:
             redirect_back();
     }
 }
 
 $user = current_user();
+
+// Backup download (handled outside POST switch)
+if ($action === 'admin_download_backup') {
+    if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { http_response_code(403); echo 'Access denied'; exit; }
+    $file = basename($_GET['file'] ?? '');
+    $path = dirname(__DIR__) . '/storage/backups/' . $file;
+    if ($file && file_exists($path) && str_starts_with(realpath($path), realpath(dirname(__DIR__) . '/storage/backups'))) {
+        header('Content-Type: application/octet-stream');
+        header('Content-Disposition: attachment; filename="' . $file . '"');
+        header('Content-Length: ' . filesize($path));
+        readfile($path);
+    } else {
+        http_response_code(404);
+        echo 'Backup not found.';
+    }
+    exit;
+}
 
 switch ($page) {
     case 'home':

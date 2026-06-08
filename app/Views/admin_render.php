@@ -2379,15 +2379,20 @@ function admin_security(): void
         'ok' => true,
     ];
 
-    // 13. SSL certificate check
+    // 13. SSL certificate check via stream socket
     $sslDaysLeft = 0;
     $sslValid = false;
-    $certFile = '/www/server/panel/vhost/cert/suggawayz.com/fullchain.pem';
-    if (file_exists($certFile)) {
-        $cert = @openssl_x509_parse(file_get_contents($certFile));
-        if ($cert && isset($cert['validTo_time_t'])) {
-            $sslDaysLeft = floor(($cert['validTo_time_t'] - time()) / 86400);
-            $sslValid = $sslDaysLeft > 0;
+    $ctx = stream_context_create(['ssl' => ['capture_peer_cert' => true, 'verify_peer' => false]]);
+    $client = @stream_socket_client('ssl://suggawayz.com:443', $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
+    if ($client) {
+        $params = stream_context_get_params($client);
+        fclose($client);
+        if (!empty($params['options']['ssl']['peer_certificate'])) {
+            $cert = @openssl_x509_parse($params['options']['ssl']['peer_certificate']);
+            if ($cert && isset($cert['validTo_time_t'])) {
+                $sslDaysLeft = floor(($cert['validTo_time_t'] - time()) / 86400);
+                $sslValid = $sslDaysLeft > 0;
+            }
         }
     }
     $checks[] = [
