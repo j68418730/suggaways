@@ -1097,6 +1097,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_flash('notice', 'Task deleted.');
             redirect('/?page=admin&tab=todos');
 
+        case 'admin_toggle_todo':
+            if (!$user || !is_admin($user)) { abort(403); }
+            db()->prepare('UPDATE todos SET is_completed = IF(is_completed, 0, 1) WHERE id = ?')->execute([(int)$_POST['id']]);
+            redirect('/?page=admin&tab=todos');
+
+        case 'admin_toggle_todo_active':
+            if (!$user || !is_admin($user)) { abort(403); }
+            db()->prepare('UPDATE todos SET is_active = IF(is_active, 0, 1) WHERE id = ?')->execute([(int)$_POST['id']]);
+            redirect('/?page=admin&tab=todos');
+
         // === ADMIN MEMBERSHIPS ===
         case 'admin_add_membership_plan':
             if (!$user || !is_admin($user)) { abort(403); }
