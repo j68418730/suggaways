@@ -906,7 +906,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (isset($_POST[$f])) set_site_setting($f, $_POST[$f]);
             }
             if (!empty($_POST['email_smtp_password'])) {
-                set_site_setting('email_smtp_password', $_POST['email_smtp_password']);
+                set_site_setting('email_smtp_password', encrypt_value($_POST['email_smtp_password']));
             }
             if (isset($_POST['social_links'])) {
                 set_site_setting('social_links', $_POST['social_links']);
@@ -1125,6 +1125,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             session_flash('notice', "Notified {$notified} members about " . count($drops) . " upcoming drops.");
             redirect('/?page=admin&tab=newsletter');
+
+        case 'admin_security_fix':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $fixed = [];
+
+            // Fix 1: Disable display_errors
+            $bootstrap = dirname(__DIR__) . '/app/bootstrap.php';
+            $content = file_get_contents($bootstrap);
+            if (strpos($content, "ini_set('display_errors', '0')") === false) {
+                $content = str_replace("ini_set('display_errors', '1')", "ini_set('display_errors', '0')", $content);
+                file_put_contents($bootstrap, $content);
+                $fixed[] = 'Disabled display_errors in bootstrap.php';
+            }
+
+            // Fix 2: Encrypt SMTP password if stored as plaintext
+            $smtpPass = site_setting('email_smtp_password', '');
+            if ($smtpPass && !decrypt_value($smtpPass)) {
+                set_site_setting('email_smtp_password', encrypt_value($smtpPass));
+                $fixed[] = 'Encrypted SMTP password';
+            }
+
+            // Fix 3: Fix session directory permissions
+            $sessDir = dirname(__DIR__) . '/storage/sessions';
+            if (is_dir($sessDir)) {
+                chmod($sessDir, 0755);
+                $fixed[] = 'Fixed session directory permissions';
+            }
+
+            if (empty($fixed)) $fixed[] = 'No fixes needed — everything looks good.';
+            session_flash('notice', implode('<br>', $fixed));
+            redirect('/?page=admin&tab=security');
 
         default:
             redirect_back();

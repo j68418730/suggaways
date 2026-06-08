@@ -220,6 +220,28 @@ function site_setting(string $key, string $default = ''): string
     return $val !== false && $val !== null ? (string)$val : $default;
 }
 
+function encrypt_value(string $value): string
+{
+    $key = defined('ENCRYPTION_KEY') ? ENCRYPTION_KEY : site_setting('_encryption_key', '');
+    if (!$key) {
+        $key = bin2hex(random_bytes(32));
+        set_site_setting('_encryption_key', $key);
+    }
+    $iv = random_bytes(16);
+    $encrypted = openssl_encrypt($value, 'aes-256-cbc', hex2bin($key), OPENSSL_RAW_DATA, $iv);
+    return base64_encode($iv . $encrypted);
+}
+
+function decrypt_value(string $encoded): string
+{
+    $key = defined('ENCRYPTION_KEY') ? ENCRYPTION_KEY : site_setting('_encryption_key', '');
+    if (!$key) return '';
+    $data = base64_decode($encoded);
+    $iv = substr($data, 0, 16);
+    $encrypted = substr($data, 16);
+    return openssl_decrypt($encrypted, 'aes-256-cbc', hex2bin($key), OPENSSL_RAW_DATA, $iv) ?: '';
+}
+
 function set_site_setting(string $key, string $value): void
 {
     db()->prepare('INSERT INTO site_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?')
@@ -521,7 +543,8 @@ function send_email_smtp(string $to, string $subject, string $body): bool
     $host = site_setting('email_smtp_host', '');
     $port = (int)site_setting('email_smtp_port', '587');
     $user = site_setting('email_smtp_username', '');
-    $pass = site_setting('email_smtp_password', '');
+    $passEnc = site_setting('email_smtp_password', '');
+    $pass = decrypt_value($passEnc) ?: $passEnc;
     $enc = site_setting('email_smtp_encryption', 'tls');
     $from = site_setting('email_from_address', $user ?: 'noreply@suggawayz.com');
     $fromName = site_setting('email_from_name', 'SUGGAWAYZ');
