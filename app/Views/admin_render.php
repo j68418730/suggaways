@@ -2398,12 +2398,15 @@ function admin_security(): void
     ];
 
     // 14. Backups
-    $backupDir = '/www/wwwroot/suggawayz/repo/backup.zip';
-    $backupAge = file_exists($backupDir) ? floor((time() - filemtime($backupDir)) / 86400) : -1;
+    $backupDir = dirname(__DIR__, 2) . '/storage/backups';
+    $backups = is_dir($backupDir) ? array_diff(scandir($backupDir), ['.','..']) : [];
+    rsort($backups);
+    $latestBackup = !empty($backups) ? $backupDir . '/' . $backups[0] : null;
+    $backupAge = $latestBackup ? floor((time() - filemtime($latestBackup)) / 86400) : -1;
     $checks[] = [
-        'icon' => $backupAge >= 0 && $backupAge <= 7 ? '✅' : '⚠️',
+        'icon' => $backupAge >= 0 ? '✅' : '⚠️',
         'label' => 'Database backup',
-        'detail' => $backupAge >= 0 ? "Backup is {$backupAge} days old" : 'No backup found',
+        'detail' => $latestBackup ? "Latest: " . basename($latestBackup) . " ({$backupAge}d old)" : 'No backup found',
         'ok' => $backupAge >= 0 && $backupAge <= 7,
     ];
 
@@ -2430,6 +2433,27 @@ function admin_security(): void
           </tr>
         <?php endforeach; ?>
       </table>
+    </div>
+    <div class="panel">
+      <h3>💾 Database Backup</h3>
+      <p class="hint">Creates a full SQL dump. Max 2 backups — oldest is overwritten.</p>
+      <form method="post" style="display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="admin_create_backup">
+        <button class="button primary" type="submit">Create Backup Now</button>
+      </form>
+      <?php if (!empty($backups)): ?>
+        <div style="margin-top:12px">
+          <?php foreach (array_slice($backups, 0, 2) as $b): $bpath = $backupDir . '/' . $b; ?>
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px">
+              <span>📁 <?= e($b) ?> (<?= e(number_format(filesize($bpath))) ?> bytes)</span>
+              <a href="/?action=admin_download_backup&file=<?= e($b) ?>&csrf=<?= e(csrf_token()) ?>" class="button" style="padding:4px 10px;min-height:auto;font-size:11px">Download</a>
+            </div>
+          <?php endforeach; ?>
+        </div>
+      <?php else: ?>
+        <p class="hint" style="margin-top:8px">No backups yet.</p>
+      <?php endif; ?>
     </div>
     <div class="panel">
       <h3>Quick Fixes</h3>

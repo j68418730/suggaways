@@ -1166,6 +1166,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_flash('notice', implode('<br>', $fixed));
             redirect('/?page=admin&tab=security');
 
+        case 'admin_create_backup':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $backupDir = dirname(__DIR__) . '/storage/backups';
+            if (!is_dir($backupDir)) mkdir($backupDir, 0755, true);
+
+            // Keep max 2 backups — remove oldest
+            $existing = is_dir($backupDir) ? array_diff(scandir($backupDir), ['.','..']) : [];
+            sort($existing);
+            while (count($existing) >= 2) {
+                $oldest = array_shift($existing);
+                @unlink($backupDir . '/' . $oldest);
+            }
+
+            $filename = 'suggawayz-backup-' . date('Y-m-d-Hi') . '.sql';
+            $path = $backupDir . '/' . $filename;
+            $config = require dirname(__DIR__) . '/config/database.php';
+            $cmd = sprintf('mysqldump -h%s -P%s -u%s -p%s %s --no-tablespaces > %s 2>/dev/null',
+                escapeshellarg($config['host']), escapeshellarg($config['port']),
+                escapeshellarg($config['username']), escapeshellarg($config['password']),
+                escapeshellarg($config['database']), escapeshellarg($path));
+            exec($cmd, $output, $rc);
+            if ($rc === 0 && file_exists($path)) {
+                session_flash('notice', "Backup created: {$filename}");
+            } else {
+                // Fallback: PHP-based backup
+                $tables = db()->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
+                $sql = "-- SUGGAWAYZ Database Backup\n-- Date: " . date('Y-m-d H:i:s') . "\n\n";
+                foreach ($tables as $table) {
+                    $create = db()->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_NUM);
+                    $sql .= "DROP TABLE IF EXISTS `$table`;\n{$create[1]};\n\n";
+                    $rows = db()->query("SELECT * FROM `$table`")->fetchAll(PDO::FETCH_NUM);
+                    foreach ($rows as $row) {
+                        $vals = array_map(fn($v) => $v === null ? 'NULL' : "'" . addslashes((string)$v) . "'", $row);
+                        $sql .= "INSERT INTO `$table` VALUES (" . implode(',', $vals) . ");\n";
+                    }
+                    $sql .= "\n";
+                }
+                file_put_contents($path, $sql);
+                session_flash('notice', "Backup created (PHP fallback): {$filename}");
+            }
+            redirect('/?page=admin&tab=security');
+
+        case 'admin_download_backup':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $file = basename($_GET['file'] ?? '');
+            $path = dirname(__DIR__) . '/storage/backups/' . $file;
+            if ($file && file_exists($path) && str_starts_with(realpath($path), realpath(dirname(__DIR__) . '/storage/backups'))) {
+                header('Content-Type: application/octet-stream');
+                header('Content-Disposition: attachment; filename="' . $file . '"');
+                header('Content-Length: ' . filesize($path));
+                readfile($path);
+            } else {
+                session_flash('error', 'Backup not found.');
+                redirect('/?page=admin&tab=security');
+            }
+            exit;
+
         default:
             redirect_back();
     }
