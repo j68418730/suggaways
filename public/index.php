@@ -1200,6 +1200,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             redirect('/?page=admin&tab=inbox&subtab=accounts');
 
+        case 'admin_send_email':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $from = $_POST['from_email'] ?? site_setting('email_from_address', 'noreply@suggawayz.com');
+            $to = trim($_POST['to_email'] ?? '');
+            $subject = trim($_POST['subject'] ?? '');
+            $body = trim($_POST['body'] ?? '');
+            if ($to && $subject && $body) {
+                $htmlBody = nl2br(e($body));
+                $sent = send_email($to, $subject, $htmlBody);
+                if ($sent) {
+                    session_flash('notice', "Email sent to $to");
+                } else {
+                    session_flash('error', 'Failed to send email. Check SMTP settings.');
+                }
+            } else {
+                session_flash('error', 'To, Subject, and Body are required.');
+            }
+            redirect('/?page=admin&tab=inbox&subtab=compose');
+
+        case 'admin_delete_message':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $mailbox = $_POST['mailbox'] ?? '';
+            $msgUid = (int)($_POST['msg_uid'] ?? 0);
+            if ($mailbox && $msgUid) {
+                $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
+                $stmt = $sqldb->prepare("SELECT password FROM mailbox WHERE username=?");
+                $stmt->execute([$mailbox]);
+                $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($row) {
+                    $pass = $row['password'];
+                    $host = site_setting('imap_host', 'localhost');
+                    $port = (int)site_setting('imap_port', '143');
+                    imap_cmd($host, $port, $mailbox, $pass, "STORE $msgUid +FLAGS (\Deleted)");
+                    imap_cmd($host, $port, $mailbox, $pass, "EXPUNGE");
+                    session_flash('notice', "Message deleted.");
+                }
+            }
+            redirect('/?page=admin&tab=inbox&subtab=inbox&mailbox=' . urlencode($mailbox));
+
         case 'admin_security_fix':
             if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
             $fixed = [];

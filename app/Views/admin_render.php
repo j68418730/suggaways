@@ -2539,101 +2539,153 @@ function admin_inbox(): void
     $subtab = $_GET['subtab'] ?? 'inbox';
     $mailDomain = 'suggawayz.com';
     $dbPath = '/www/vmail/postfixadmin.db';
+    $viewMailbox = $_GET['mailbox'] ?? '';
+    $viewMsg = (int)($_GET['msg'] ?? 0);
 
-    // Fetch existing mailboxes from SQLite
+    // Fetch mailboxes from SQLite
     $mailboxes = [];
     if (file_exists($dbPath)) {
-        $sqldb = new PDO("sqlite:$dbPath");
-        $r = $sqldb->query("SELECT username, full_name, domain, active, quota FROM mailbox ORDER BY username");
-        $mailboxes = $r ? $r->fetchAll(PDO::FETCH_ASSOC) : [];
+        try { $sqldb = new PDO("sqlite:$dbPath"); $r = $sqldb->query("SELECT username, full_name, domain, active, quota FROM mailbox ORDER BY username"); $mailboxes = $r ? $r->fetchAll(PDO::FETCH_ASSOC) : []; } catch (Exception $e) {}
     }
     ?>
     <div class="panel" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px">
       <a href="/?page=admin&tab=inbox&subtab=inbox" class="button" style="padding:6px 14px;min-height:auto;font-size:12px;<?= $subtab === 'inbox' ? 'background:rgba(0,200,255,0.15);border-color:var(--cyan);color:var(--cyan)' : '' ?>">📨 Inbox</a>
-      <a href="/?page=admin&tab=inbox&subtab=accounts" class="button" style="padding:6px 14px;min-height:auto;font-size:12px;<?= $subtab === 'accounts' ? 'background:rgba(0,200,255,0.15);border-color:var(--cyan);color:var(--cyan)' : '' ?>">👤 Email Accounts</a>
+      <a href="/?page=admin&tab=inbox&subtab=compose" class="button" style="padding:6px 14px;min-height:auto;font-size:12px;<?= $subtab === 'compose' ? 'background:rgba(0,200,255,0.15);border-color:var(--cyan);color:var(--cyan)' : '' ?>">✉️ Compose</a>
+      <a href="/?page=admin&tab=inbox&subtab=accounts" class="button" style="padding:6px 14px;min-height:auto;font-size:12px;<?= $subtab === 'accounts' ? 'background:rgba(0,200,255,0.15);border-color:var(--cyan);color:var(--cyan)' : '' ?>">👤 Accounts</a>
     </div>
-
-    <?php if ($subtab === 'inbox'): ?>
-    <?php
-    $imapHost = site_setting('imap_host', 'localhost');
-    $imapPort = (int)site_setting('imap_port', '143');
-    $imapUser = site_setting('imap_user', '');
-    $imapPassEnc = site_setting('imap_pass', '');
-    $imapPass = decrypt_value($imapPassEnc) ?: $imapPassEnc;
-    $messages = []; $error = '';
-    if ($imapUser && $imapPass) {
-        $result = imap_fetch_mail($imapHost, $imapPort, $imapUser, $imapPass, 'INBOX', 30);
-        if (isset($result['error'])) $error = $result['error'];
-        else $messages = $result;
-    }
-    ?>
-    <div class="panel">
-      <h2>📨 Inbox</h2>
-      <?php if (!$imapUser): ?>
-        <p class="hint">Configure IMAP in <a href="/?page=admin&tab=settings&subtab=email">Email Settings</a> first.</p>
-      <?php elseif ($error): ?>
-        <p style="color:var(--red)">⚠️ <?= e($error) ?></p>
-      <?php elseif (empty($messages)): ?>
-        <p class="hint">Inbox is empty.</p>
-      <?php else: ?>
-        <table class="table" style="font-size:13px">
-          <tr><th>From</th><th>Subject</th><th>Date</th></tr>
-          <?php foreach (array_reverse($messages) as $msg): ?>
-            <tr><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($msg['from'] ?? '—') ?></td><td><?= e($msg['subject'] ?? '(no subject)') ?></td><td style="white-space:nowrap;font-size:11px"><?= e($msg['date'] ?? '') ?></td></tr>
-          <?php endforeach; ?>
-        </table>
-      <?php endif; ?>
-    </div>
-    <?php endif; ?>
 
     <?php if ($subtab === 'accounts'): ?>
     <div class="panel">
       <h2>👤 Email Accounts</h2>
-      <details>
-        <summary class="button primary" style="display:inline-block;cursor:pointer;margin-bottom:12px">+ Create Email Account</summary>
-        <form method="post" class="form" style="max-width:400px;margin-top:8px" onsubmit="return confirm('Create this email account?')">
-          <?= csrf_field() ?>
-          <input type="hidden" name="action" value="admin_create_email">
-          <div class="form-row">
-            <label>Username<input name="local_part" required placeholder="e.g. info"></label>
-            <label>@<?= e($mailDomain) ?></label>
-          </div>
+      <details><summary class="button primary" style="display:inline-block;cursor:pointer;margin-bottom:12px">+ Create Email Account</summary>
+        <form method="post" class="form" style="max-width:400px;margin-top:8px">
+          <?= csrf_field() ?><input type="hidden" name="action" value="admin_create_email">
+          <div class="form-row"><label>Username<input name="local_part" required placeholder="e.g. info"></label><label>@<?= e($mailDomain) ?></label></div>
           <label>Full Name<input name="full_name" placeholder="John Doe"></label>
           <label>Password<input name="password" type="password" required minlength="6"></label>
           <label>Quota (MB)<input name="quota" type="number" value="1024"></label>
           <button class="button primary" type="submit">Create Account</button>
         </form>
       </details>
-      <?php if (empty($mailboxes)): ?>
-        <p class="hint">No email accounts yet.</p>
+      <?php if (empty($mailboxes)): ?><p class="hint">No email accounts yet.</p>
       <?php else: ?>
-        <table class="table" style="font-size:13px">
-          <tr><th>Email</th><th>Name</th><th>Quota</th><th>Status</th><th>Actions</th></tr>
-          <?php foreach ($mailboxes as $m): ?>
-            <tr>
-              <td><?= e($m['username']) ?></td>
-              <td><?= e($m['full_name'] ?: '—') ?></td>
-              <td><?= (int)$m['quota'] > 0 ? round((int)$m['quota'] / 1048576, 1) . ' MB' : 'Unlimited' ?></td>
-              <td><span class="badge" style="background:<?= $m['active'] ? 'var(--green)' : 'var(--red)' ?>"><?= $m['active'] ? 'Active' : 'Inactive' ?></span></td>
-              <td style="white-space:nowrap">
-                <form method="post" style="display:inline" onsubmit="return confirm('Delete <?= e($m['username']) ?>?')">
-                  <?= csrf_field() ?>
-                  <input type="hidden" name="action" value="admin_delete_email">
-                  <input type="hidden" name="email" value="<?= e($m['username']) ?>">
-                  <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)">Del</button>
-                </form>
-                <form method="post" style="display:inline-flex;gap:4px">
-                  <?= csrf_field() ?>
-                  <input type="hidden" name="action" value="admin_change_email_password">
-                  <input type="hidden" name="email" value="<?= e($m['username']) ?>">
-                  <input name="new_password" type="password" placeholder="New PW" style="width:70px;padding:2px 4px;font-size:10px">
-                  <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px">Set PW</button>
-                </form>
-              </td>
-            </tr>
-          <?php endforeach; ?>
-        </table>
+      <table class="table" style="font-size:13px">
+        <tr><th>Email</th><th>Name</th><th>Quota</th><th>Status</th><th>Actions</th></tr>
+        <?php foreach ($mailboxes as $m): ?>
+          <tr><td><a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($m['username']) ?>"><?= e($m['username']) ?></a></td>
+            <td><?= e($m['full_name'] ?: '—') ?></td>
+            <td><?= (int)$m['quota'] > 0 ? round((int)$m['quota']/1048576,1).' MB' : 'Unlimited' ?></td>
+            <td><span class="badge" style="background:<?= $m['active'] ? 'var(--green)' : 'var(--red)' ?>"><?= $m['active'] ? 'Active' : 'Inactive' ?></span></td>
+            <td style="white-space:nowrap">
+              <form method="post" style="display:inline" onsubmit="return confirm('Delete?')"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_email"><input type="hidden" name="email" value="<?= e($m['username']) ?>"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)">Del</button></form>
+              <form method="post" style="display:inline-flex;gap:4px"><?= csrf_field() ?><input type="hidden" name="action" value="admin_change_email_password"><input type="hidden" name="email" value="<?= e($m['username']) ?>"><input name="new_password" type="password" placeholder="New PW" style="width:70px;padding:2px 4px;font-size:10px"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px">Set PW</button></form>
+            </td>
+          </tr>
+        <?php endforeach; ?>
+      </table>
       <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($subtab === 'compose'): ?>
+    <div class="panel">
+      <h2>✉️ Compose Email</h2>
+      <form method="post" class="form" style="max-width:600px">
+        <?= csrf_field() ?><input type="hidden" name="action" value="admin_send_email">
+        <label>From<select name="from_email">
+          <?php foreach ($mailboxes as $m): ?><option value="<?= e($m['username']) ?>"><?= e($m['username']) ?></option><?php endforeach; ?>
+        </select></label>
+        <label>To<input name="to_email" type="email" required placeholder="recipient@example.com"></label>
+        <label>Subject<input name="subject" required></label>
+        <label>Message<textarea name="body" required rows="10" style="font-family:var(--mono);font-size:13px"></textarea></label>
+        <button class="button primary" type="submit">Send Email</button>
+      </form>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($subtab === 'inbox'): ?>
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:start">
+      <div class="panel" style="padding:8px">
+        <strong style="font-size:12px;display:block;padding:4px 8px">📬 Mailboxes</strong>
+        <?php foreach ($mailboxes as $m): ?>
+          <a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($m['username']) ?>" style="display:block;padding:6px 8px;font-size:12px;border-radius:4px;text-decoration:none;color:var(--text);<?= $viewMailbox === $m['username'] ? 'background:rgba(0,200,255,0.1)' : '' ?>"><?= e($m['username']) ?></a>
+        <?php endforeach; ?>
+      </div>
+      <div class="panel">
+        <?php
+        $imapHost = site_setting('imap_host', 'localhost');
+        $imapPort = (int)site_setting('imap_port', '143');
+        // Determine which mailbox to view
+        $activeMailbox = $viewMailbox ?: ($mailboxes[0]['username'] ?? '');
+        $imapUser = $activeMailbox;
+
+        // Get password for this mailbox
+        $imapPass = '';
+        if (file_exists($dbPath) && $activeMailbox) {
+            try {
+                $sqldb = new PDO("sqlite:$dbPath");
+                $stmt = $sqldb->prepare("SELECT password FROM mailbox WHERE username=?");
+                $stmt->execute([$activeMailbox]);
+                $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($row) $imapPass = $row['password'];
+            } catch (Exception $e) {}
+        }
+
+        if ($viewMsg && $imapPass) {
+            // Fetch full message body
+            $raw = imap_cmd($imapHost, $imapPort, $imapUser, $imapPass, "FETCH $viewMsg (BODY[TEXT])");
+            $body = $raw['resp'] ?? '';
+            $raw2 = imap_cmd($imapHost, $imapPort, $imapUser, $imapPass, "FETCH $viewMsg (BODY[HEADER.FIELDS (FROM SUBJECT DATE)])");
+            $header = $raw2['resp'] ?? '';
+            preg_match('/^FROM:\s*(.+)/im', $header, $fm);
+            preg_match('/^SUBJECT:\s*(.+)/im', $header, $sm);
+            preg_match('/^DATE:\s*(.+)/im', $header, $dm);
+            $from = trim($fm[1] ?? 'Unknown');
+            $subject = trim(mb_decode_mimeheader($sm[1] ?? '(no subject)'));
+            $date = trim($dm[1] ?? '');
+
+            // Extract body from IMAP response
+            $bodyClean = '';
+            if (preg_match('/\{(\d+)\}\r\n(.*)/s', $body, $bm)) {
+                $bodyClean = substr($bm[2], 0, (int)$bm[1]);
+            }
+            ?>
+            <div style="margin-bottom:12px">
+              <a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($activeMailbox) ?>" class="button" style="padding:4px 10px;min-height:auto;font-size:11px">← Back to Inbox</a>
+              <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_message"><input type="hidden" name="mailbox" value="<?= e($activeMailbox) ?>"><input type="hidden" name="msg_uid" value="<?= $viewMsg ?>"><button class="button" type="submit" style="padding:4px 10px;min-height:auto;font-size:11px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete this message?')">🗑 Delete</button></form>
+            </div>
+            <div style="padding:12px;background:var(--surface2);border-radius:4px;margin-bottom:12px">
+              <p><strong>From:</strong> <?= e($from) ?></p>
+              <p><strong>Subject:</strong> <?= e($subject) ?></p>
+              <p><strong>Date:</strong> <?= e($date) ?></p>
+            </div>
+            <div style="padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;font-size:13px;line-height:1.6;white-space:pre-wrap"><?= e($bodyClean) ?></div>
+            <?php
+        } else {
+            // Show inbox
+            echo '<h2 style="font-size:16px;margin-bottom:12px">📨 ' . e($activeMailbox ?: 'Inbox') . '</h2>';
+            if (!$imapPass) {
+                echo '<p class="hint">Select a mailbox from the left.</p>';
+            } else {
+                $messages = imap_fetch_mail($imapHost, $imapPort, $imapUser, $imapPass, 'INBOX', 30);
+                if (isset($messages['error'])) {
+                    echo '<p style="color:var(--red)">⚠️ ' . e($messages['error']) . '</p>';
+                } elseif (empty($messages)) {
+                    echo '<p class="hint">Inbox is empty.</p>';
+                } else {
+                    echo '<table class="table" style="font-size:13px"><tr><th>From</th><th>Subject</th><th>Date</th></tr>';
+                    foreach (array_reverse($messages) as $msg) {
+                        $mid = $msg['uid'] ?? 0;
+                        echo '<tr><td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' . e($msg['from'] ?? '—') . '</td>
+                          <td><a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=' . e($activeMailbox) . '&msg=' . $mid . '">' . e($msg['subject'] ?? '(no subject)') . '</a></td>
+                          <td style="white-space:nowrap;font-size:11px">' . e($msg['date'] ?? '') . '</td></tr>';
+                    }
+                    echo '</table>';
+                }
+            }
+        }
+        ?>
+      </div>
     </div>
     <?php endif; ?>
     <?php
