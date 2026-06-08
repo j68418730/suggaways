@@ -2536,45 +2536,106 @@ function admin_security(): void
 
 function admin_inbox(): void
 {
+    $subtab = $_GET['subtab'] ?? 'inbox';
+    $mailDomain = 'suggawayz.com';
+    $dbPath = '/www/vmail/postfixadmin.db';
+
+    // Fetch existing mailboxes from SQLite
+    $mailboxes = [];
+    if (file_exists($dbPath)) {
+        $sqldb = new PDO("sqlite:$dbPath");
+        $r = $sqldb->query("SELECT username, full_name, domain, active, quota FROM mailbox ORDER BY username");
+        $mailboxes = $r ? $r->fetchAll(PDO::FETCH_ASSOC) : [];
+    }
+    ?>
+    <div class="panel" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px">
+      <a href="/?page=admin&tab=inbox&subtab=inbox" class="button" style="padding:6px 14px;min-height:auto;font-size:12px;<?= $subtab === 'inbox' ? 'background:rgba(0,200,255,0.15);border-color:var(--cyan);color:var(--cyan)' : '' ?>">📨 Inbox</a>
+      <a href="/?page=admin&tab=inbox&subtab=accounts" class="button" style="padding:6px 14px;min-height:auto;font-size:12px;<?= $subtab === 'accounts' ? 'background:rgba(0,200,255,0.15);border-color:var(--cyan);color:var(--cyan)' : '' ?>">👤 Email Accounts</a>
+    </div>
+
+    <?php if ($subtab === 'inbox'): ?>
+    <?php
     $imapHost = site_setting('imap_host', 'localhost');
     $imapPort = (int)site_setting('imap_port', '143');
     $imapUser = site_setting('imap_user', '');
     $imapPassEnc = site_setting('imap_pass', '');
     $imapPass = decrypt_value($imapPassEnc) ?: $imapPassEnc;
-    $mailbox = $_GET['mailbox'] ?? 'INBOX';
-    $messages = [];
-    $error = '';
-
+    $messages = []; $error = '';
     if ($imapUser && $imapPass) {
-        $result = imap_fetch_mail($imapHost, $imapPort, $imapUser, $imapPass, $mailbox, 30);
-        if (isset($result['error'])) {
-            $error = $result['error'];
-        } else {
-            $messages = $result;
-        }
+        $result = imap_fetch_mail($imapHost, $imapPort, $imapUser, $imapPass, 'INBOX', 30);
+        if (isset($result['error'])) $error = $result['error'];
+        else $messages = $result;
     }
     ?>
     <div class="panel">
       <h2>📨 Inbox</h2>
       <?php if (!$imapUser): ?>
-        <p class="hint">Configure IMAP settings in <a href="/?page=admin&tab=settings&subtab=email">Email Settings</a> to view your inbox.</p>
+        <p class="hint">Configure IMAP in <a href="/?page=admin&tab=settings&subtab=email">Email Settings</a> first.</p>
       <?php elseif ($error): ?>
         <p style="color:var(--red)">⚠️ <?= e($error) ?></p>
       <?php elseif (empty($messages)): ?>
-        <p class="hint">No messages in <?= e($mailbox) ?>.</p>
+        <p class="hint">Inbox is empty.</p>
       <?php else: ?>
         <table class="table" style="font-size:13px">
           <tr><th>From</th><th>Subject</th><th>Date</th></tr>
           <?php foreach (array_reverse($messages) as $msg): ?>
+            <tr><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($msg['from'] ?? '—') ?></td><td><?= e($msg['subject'] ?? '(no subject)') ?></td><td style="white-space:nowrap;font-size:11px"><?= e($msg['date'] ?? '') ?></td></tr>
+          <?php endforeach; ?>
+        </table>
+      <?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($subtab === 'accounts'): ?>
+    <div class="panel">
+      <h2>👤 Email Accounts</h2>
+      <details>
+        <summary class="button primary" style="display:inline-block;cursor:pointer;margin-bottom:12px">+ Create Email Account</summary>
+        <form method="post" class="form" style="max-width:400px;margin-top:8px" onsubmit="return confirm('Create this email account?')">
+          <?= csrf_field() ?>
+          <input type="hidden" name="action" value="admin_create_email">
+          <div class="form-row">
+            <label>Username<input name="local_part" required placeholder="e.g. info"></label>
+            <label>@<?= e($mailDomain) ?></label>
+          </div>
+          <label>Full Name<input name="full_name" placeholder="John Doe"></label>
+          <label>Password<input name="password" type="password" required minlength="6"></label>
+          <label>Quota (MB)<input name="quota" type="number" value="1024"></label>
+          <button class="button primary" type="submit">Create Account</button>
+        </form>
+      </details>
+      <?php if (empty($mailboxes)): ?>
+        <p class="hint">No email accounts yet.</p>
+      <?php else: ?>
+        <table class="table" style="font-size:13px">
+          <tr><th>Email</th><th>Name</th><th>Quota</th><th>Status</th><th>Actions</th></tr>
+          <?php foreach ($mailboxes as $m): ?>
             <tr>
-              <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($msg['from'] ?? '—') ?></td>
-              <td><?= e($msg['subject'] ?? '(no subject)') ?></td>
-              <td style="white-space:nowrap;font-size:11px"><?= e($msg['date'] ?? '') ?></td>
+              <td><?= e($m['username']) ?></td>
+              <td><?= e($m['full_name'] ?: '—') ?></td>
+              <td><?= (int)$m['quota'] > 0 ? round((int)$m['quota'] / 1048576, 1) . ' MB' : 'Unlimited' ?></td>
+              <td><span class="badge" style="background:<?= $m['active'] ? 'var(--green)' : 'var(--red)' ?>"><?= $m['active'] ? 'Active' : 'Inactive' ?></span></td>
+              <td style="white-space:nowrap">
+                <form method="post" style="display:inline" onsubmit="return confirm('Delete <?= e($m['username']) ?>?')">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="admin_delete_email">
+                  <input type="hidden" name="email" value="<?= e($m['username']) ?>">
+                  <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)">Del</button>
+                </form>
+                <form method="post" style="display:inline-flex;gap:4px">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="admin_change_email_password">
+                  <input type="hidden" name="email" value="<?= e($m['username']) ?>">
+                  <input name="new_password" type="password" placeholder="New PW" style="width:70px;padding:2px 4px;font-size:10px">
+                  <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px">Set PW</button>
+                </form>
+              </td>
             </tr>
           <?php endforeach; ?>
         </table>
       <?php endif; ?>
     </div>
+    <?php endif; ?>
     <?php
 }
 

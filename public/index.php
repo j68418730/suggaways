@@ -1149,6 +1149,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_flash('notice', "Notified {$notified} members about " . count($drops) . " upcoming drops.");
             redirect('/?page=admin&tab=newsletter');
 
+        // === EMAIL ACCOUNTS ===
+        case 'admin_create_email':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $localPart = trim($_POST['local_part'] ?? '');
+            $fullName = trim($_POST['full_name'] ?? '');
+            $password = $_POST['password'] ?? '';
+            $domain = 'suggawayz.com';
+            $quota = ((int)($_POST['quota'] ?? 1024)) * 1048576;
+            if (!$localPart || strlen($password) < 6) { session_flash('error', 'Username and password (min 6 chars) required.'); redirect('/?page=admin&tab=inbox&subtab=accounts'); }
+            $email = "$localPart@$domain";
+            $maildir = "$domain/$localPart/";
+            $hash = crypt($password, '$1$' . bin2hex(random_bytes(6))); // MD5-CRYPT for Dovecot
+            $dbPath = '/www/vmail/postfixadmin.db';
+            if (!file_exists($dbPath)) { session_flash('error', 'Mail database not found.'); redirect('/?page=admin&tab=inbox&subtab=accounts'); }
+            try {
+                $sqldb = new PDO("sqlite:$dbPath");
+                $stmt = $sqldb->prepare("INSERT INTO mailbox (username, password, password_encode, full_name, maildir, quota, local_part, domain, created, modified, active) VALUES (?,?,'{MD5-CRYPT}',?,?,?,?,?,datetime('now'),datetime('now'),1)");
+                $stmt->execute([$email, $hash, $fullName, $maildir, $quota, $localPart, $domain]);
+                // Ensure maildir exists
+                $mailDirPath = "/www/vmail/$domain/$localPart";
+                if (!is_dir($mailDirPath)) @mkdir($mailDirPath, 0755, true);
+                session_flash('notice', "Email account $email created.");
+            } catch (Exception $e) {
+                session_flash('error', 'Failed to create email: ' . $e->getMessage());
+            }
+            redirect('/?page=admin&tab=inbox&subtab=accounts');
+
+        case 'admin_delete_email':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $email = $_POST['email'] ?? '';
+            if ($email) {
+                $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
+                $sqldb->prepare("DELETE FROM mailbox WHERE username=?")->execute([$email]);
+                session_flash('notice', "Email $email deleted.");
+            }
+            redirect('/?page=admin&tab=inbox&subtab=accounts');
+
+        case 'admin_change_email_password':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $email = $_POST['email'] ?? '';
+            $newPass = $_POST['new_password'] ?? '';
+            if ($email && strlen($newPass) >= 6) {
+                $hash = crypt($newPass, '$1$' . bin2hex(random_bytes(6)));
+                $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
+                $sqldb->prepare("UPDATE mailbox SET password=?, modified=datetime('now') WHERE username=?")->execute([$hash, $email]);
+                session_flash('notice', "Password changed for $email.");
+            } else {
+                session_flash('error', 'Password must be at least 6 characters.');
+            }
+            redirect('/?page=admin&tab=inbox&subtab=accounts');
+
         case 'admin_security_fix':
             if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
             $fixed = [];
