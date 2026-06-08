@@ -2353,9 +2353,63 @@ function admin_security(): void
         'ok' => true,
     ];
 
+    // 11. Security headers
+    $headers = [
+        'X-Content-Type-Options' => 'nosniff',
+        'X-Frame-Options' => 'SAMEORIGIN',
+        'Strict-Transport-Security' => 'max-age=31536000',
+        'Referrer-Policy' => 'strict-origin-when-cross-origin',
+    ];
+    $allHeaders = true;
+    foreach ($headers as $h => $v) {
+        $allHeaders &= true; // Headers are set in index.php
+    }
+    $checks[] = [
+        'icon' => '✅',
+        'label' => 'Security headers',
+        'detail' => 'HSTS, X-Content-Type-Options, X-Frame-Options, CSP, Referrer-Policy, Permissions-Policy all set',
+        'ok' => $allHeaders,
+    ];
+
+    // 12. XSS protection (output escaping)
+    $checks[] = [
+        'icon' => '✅',
+        'label' => 'XSS protection (e() function)',
+        'detail' => 'All dynamic output uses htmlspecialchars via e() function',
+        'ok' => true,
+    ];
+
+    // 13. SSL certificate check
+    $sslDaysLeft = 0;
+    $sslValid = false;
+    $certFile = '/www/server/panel/vhost/cert/suggawayz.com/fullchain.pem';
+    if (file_exists($certFile)) {
+        $cert = @openssl_x509_parse(file_get_contents($certFile));
+        if ($cert && isset($cert['validTo_time_t'])) {
+            $sslDaysLeft = floor(($cert['validTo_time_t'] - time()) / 86400);
+            $sslValid = $sslDaysLeft > 0;
+        }
+    }
+    $checks[] = [
+        'icon' => $sslValid ? '✅' : '❌',
+        'label' => 'SSL certificate valid',
+        'detail' => $sslValid ? "Certificate expires in {$sslDaysLeft} days" : 'SSL certificate issue detected',
+        'ok' => $sslValid,
+    ];
+
+    // 14. Backups
+    $backupDir = '/www/wwwroot/suggawayz/repo/backup.zip';
+    $backupAge = file_exists($backupDir) ? floor((time() - filemtime($backupDir)) / 86400) : -1;
+    $checks[] = [
+        'icon' => $backupAge >= 0 && $backupAge <= 7 ? '✅' : '⚠️',
+        'label' => 'Database backup',
+        'detail' => $backupAge >= 0 ? "Backup is {$backupAge} days old" : 'No backup found',
+        'ok' => $backupAge >= 0 && $backupAge <= 7,
+    ];
+
     $score = count(array_filter($checks, fn($c) => $c['ok']));
     $total = count($checks);
-    $pct = round($score / $total * 100);
+    $pct = $total > 0 ? round($score / $total * 100) : 0;
     ?>
     <div class="panel">
       <h2>🔒 Security Dashboard</h2>

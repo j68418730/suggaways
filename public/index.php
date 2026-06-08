@@ -3,6 +3,13 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/app/bootstrap.php';
 
+// Security headers
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: SAMEORIGIN');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+header("Content-Security-Policy: default-src 'self'; script-src 'self' https://www.paypal.com https://www.paypalobjects.com https://api.qrserver.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; img-src 'self' data: https://api.qrserver.com https://cash.app; font-src 'self' https://fonts.gstatic.com; frame-src 'self' https://www.paypal.com; connect-src 'self' https://api-m.sandbox.paypal.com");
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+
 $page = $_GET['page'] ?? 'home';
 $action = $_POST['action'] ?? null;
 $user = current_user();
@@ -1114,7 +1121,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $drops = db()->query("SELECT id, name, DATE(release_date) as rdate FROM coming_soon WHERE is_notified=0 AND release_date IS NOT NULL")->fetchAll();
             $members = db()->query("SELECT u.email, u.full_name FROM user_memberships m JOIN users u ON u.id=m.user_id WHERE m.status='active'")->fetchAll();
             foreach ($drops as $drop) {
-                $daysUntil = (int)db()->query("SELECT DATEDIFF('{$drop['rdate']}', CURDATE())")->fetchColumn();
+                $stmt = db()->prepare("SELECT DATEDIFF(?, CURDATE())");
+                $stmt->execute([$drop['rdate']]);
+                $daysUntil = (int)$stmt->fetchColumn();
                 if ($daysUntil <= 10 && $daysUntil >= 0) {
                     foreach ($members as $member) {
                         $body = "Hey {$member['full_name']},<br><br>🔥 <strong>{$drop['name']}</strong> drops in {$daysUntil} days!<br><br>As a Sugga Gang member, you get early access. Stay tuned for your exclusive link.<br><br>— SUGGAWAYZ";
