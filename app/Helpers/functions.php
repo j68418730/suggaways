@@ -589,6 +589,44 @@ function send_email_smtp(string $to, string $subject, string $body): bool
     return $result;
 }
 
+function imap_fetch_mail(string $host, int $port, string $user, string $pass, string $mailbox = 'INBOX', int $limit = 20): array
+{
+    $errno = 0; $errstr = '';
+    $fp = @fsockopen($host, $port, $errno, $errstr, 10);
+    if (!$fp) return ['error' => "Connection failed: $errstr"];
+    fread($fp, 8192);
+    $tag = 1;
+    $send = function($c) use ($fp, &$tag) { fwrite($fp, "A$tag $c\r\n"); fflush($fp); $tag++; };
+    $recv = function() use ($fp) {
+        $lines = [];
+        while ($line = fgets($fp, 8192)) { $lines[] = rtrim($line); if (preg_match('/^A\d+ (OK|NO|BAD|BYE)/', $line)) break; }
+        return $lines;
+    };
+    $send("AUTH LOGIN");
+    $r = $recv();
+    if (preg_match('/^\+/', $r[0] ?? '')) { fwrite($fp, base64_encode($user) . "\r\n"); fflush($fp); $r = $recv(); }
+    if (preg_match('/^\+/', $r[0] ?? '')) { fwrite($fp, base64_encode($pass) . "\r\n"); fflush($fp); $r = $recv(); }
+    if (!preg_match('/^A\d+ OK/', end($r))) { fclose($fp); return ['error' => 'Login failed']; }
+    $send("SELECT \"$mailbox\"");
+    $r = $recv();
+    $exists = 0;
+    foreach ($r as $line) { if (preg_match('/^\* (\d+) EXISTS/', $line, $m)) $exists = (int)$m[1]; }
+    if (!$exists) { fclose($fp); return []; }
+    $start = max(1, $exists - $limit + 1);
+    $send("FETCH $start:$exists (FLAGS BODY[HEADER.FIELDS (FROM SUBJECT DATE)])");
+    $r = $recv();
+    $messages = []; $current = [];
+    foreach ($r as $line) {
+        if (preg_match('/^\* (\d+) FETCH/', $line, $m)) { if (!empty($current)) $messages[] = $current; $current = ['uid' => (int)$m[1]]; }
+        elseif (preg_match('/^FROM:\s*(.+)/i', $line, $m)) $current['from'] = trim(mb_decode_mimeheader($m[1]));
+        elseif (preg_match('/^SUBJECT:\s*(.+)/i', $line, $m)) $current['subject'] = trim(mb_decode_mimeheader($m[1]));
+        elseif (preg_match('/^DATE:\s*(.+)/i', $line, $m)) $current['date'] = trim($m[1]);
+    }
+    if (!empty($current)) $messages[] = $current;
+    fclose($fp);
+    return $messages;
+}
+
 function view(string $view, array $data = [], bool $direct = false): string
 {
     $path = dirname(__DIR__) . '/Views/' . str_replace('.', '/', $view) . '.php';

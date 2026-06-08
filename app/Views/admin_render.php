@@ -32,6 +32,7 @@ function render_admin_dashboard(
         ['tab' => 'events',    'label' => '📅 Events',    'admin' => false],
         ['tab' => 'contact',   'label' => '📧 Contact',   'admin' => true],
         ['tab' => 'shipping',  'label' => '🚚 Shipping',  'admin' => true],
+        ['tab' => 'inbox',    'label' => '📨 Inbox',    'admin' => true, 'super' => true],
         ['tab' => 'newsletter','label' => '📧 Newsletter','admin' => true],
         ['tab' => 'memberships','label' => '👥 Members',  'admin' => true, 'super' => true],
         ['tab' => 'todos',     'label' => '✅ Todo',      'admin' => true, 'super' => true],
@@ -104,6 +105,7 @@ function render_admin_dashboard(
             'contact' => admin_contact(),
             'shipping' => admin_shipping(),
             'todos' => admin_todos($todos),
+            'inbox' => admin_inbox(),
             'newsletter' => admin_newsletter(),
             'memberships' => admin_memberships(),
             'security' => admin_security(),
@@ -1996,6 +1998,28 @@ function admin_settings(): void
           <button class="button" type="submit" formaction="/?page=admin&tab=settings" formmethod="post" form="test-email-form" style="padding:6px 12px;font-size:11px">Send Test</button>
         </div>
       </form>
+    </div>
+
+    <div class="panel">
+      <h3>IMAP / Inbox Settings</h3>
+      <p class="hint">Configure IMAP for reading emails in the <a href="/?page=admin&tab=inbox">📨 Inbox</a> tab. Usually port 143 (no SSL) or 993 (SSL).</p>
+      <form method="post" class="form" style="max-width:500px">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="admin_update_site_settings">
+        <div class="form-row">
+          <label>IMAP Host<input name="imap_host" value="<?= e(site_setting('imap_host', 'localhost')) ?>" placeholder="localhost"></label>
+          <label>Port<input name="imap_port" value="<?= e(site_setting('imap_port', '143')) ?>" placeholder="143"></label>
+        </div>
+        <div class="form-row">
+          <label>Username<input name="imap_user" value="<?= e(site_setting('imap_user')) ?>" placeholder="Email address"></label>
+          <label>Password<input name="imap_pass" type="password" value="<?= e(site_setting('imap_pass') ? '********' : '') ?>" placeholder="Leave blank to keep current"></label>
+        </div>
+        <button class="button primary" type="submit">Save IMAP Settings</button>
+      </form>
+    </div>
+
+    <?php elseif ($subtab === 'integrations'): ?>
+
       <form method="post" class="inline-form" style="margin-top:8px" id="test-email-form">
         <?= csrf_field() ?>
         <input type="hidden" name="action" value="admin_send_test_email">
@@ -2506,6 +2530,50 @@ function admin_security(): void
         <button class="button primary" type="submit" style="border-color:rgba(255,76,76,0.5);background:rgba(255,76,76,0.1);color:var(--red)">Run Security Fixes</button>
         <p class="hint" style="margin-top:8px">Fixes: sets display_errors=0, encrypts SMTP password, checks file permissions.</p>
       </form>
+    </div>
+    <?php
+}
+
+function admin_inbox(): void
+{
+    $imapHost = site_setting('imap_host', 'localhost');
+    $imapPort = (int)site_setting('imap_port', '143');
+    $imapUser = site_setting('imap_user', '');
+    $imapPassEnc = site_setting('imap_pass', '');
+    $imapPass = decrypt_value($imapPassEnc) ?: $imapPassEnc;
+    $mailbox = $_GET['mailbox'] ?? 'INBOX';
+    $messages = [];
+    $error = '';
+
+    if ($imapUser && $imapPass) {
+        $result = imap_fetch_mail($imapHost, $imapPort, $imapUser, $imapPass, $mailbox, 30);
+        if (isset($result['error'])) {
+            $error = $result['error'];
+        } else {
+            $messages = $result;
+        }
+    }
+    ?>
+    <div class="panel">
+      <h2>📨 Inbox</h2>
+      <?php if (!$imapUser): ?>
+        <p class="hint">Configure IMAP settings in <a href="/?page=admin&tab=settings&subtab=email">Email Settings</a> to view your inbox.</p>
+      <?php elseif ($error): ?>
+        <p style="color:var(--red)">⚠️ <?= e($error) ?></p>
+      <?php elseif (empty($messages)): ?>
+        <p class="hint">No messages in <?= e($mailbox) ?>.</p>
+      <?php else: ?>
+        <table class="table" style="font-size:13px">
+          <tr><th>From</th><th>Subject</th><th>Date</th></tr>
+          <?php foreach (array_reverse($messages) as $msg): ?>
+            <tr>
+              <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($msg['from'] ?? '—') ?></td>
+              <td><?= e($msg['subject'] ?? '(no subject)') ?></td>
+              <td style="white-space:nowrap;font-size:11px"><?= e($msg['date'] ?? '') ?></td>
+            </tr>
+          <?php endforeach; ?>
+        </table>
+      <?php endif; ?>
     </div>
     <?php
 }

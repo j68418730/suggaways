@@ -905,15 +905,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         case 'admin_update_site_settings':
             if (!$user || !is_admin($user)) { abort(403); }
-            $fields = ['footer_tagline','hero_title','hero_subtitle','hero_subscribe','site_icon_text',
-                       'email_smtp_host','email_smtp_port','email_smtp_username',
-                       'email_smtp_encryption','email_from_address','email_from_name',
-                       'printer_type','printer_ip','printer_port','pos_tax_rate'];
+             $fields = ['footer_tagline','hero_title','hero_subtitle','hero_subscribe','site_icon_text',
+                        'email_smtp_host','email_smtp_port','email_smtp_username',
+                        'email_smtp_encryption','email_from_address','email_from_name',
+                        'printer_type','printer_ip','printer_port','pos_tax_rate',
+                        'imap_host','imap_port','imap_user'];
             foreach ($fields as $f) {
                 if (isset($_POST[$f])) set_site_setting($f, $_POST[$f]);
             }
             if (!empty($_POST['email_smtp_password'])) {
                 set_site_setting('email_smtp_password', encrypt_value($_POST['email_smtp_password']));
+            }
+            if (!empty($_POST['imap_pass'])) {
+                set_site_setting('imap_pass', encrypt_value($_POST['imap_pass']));
             }
             if (isset($_POST['social_links'])) {
                 set_site_setting('social_links', $_POST['social_links']);
