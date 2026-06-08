@@ -592,29 +592,42 @@ function send_email_smtp(string $to, string $subject, string $body): bool
 function imap_fetch_mail(string $host, int $port, string $user, string $pass, string $mailbox = 'INBOX', int $limit = 20): array
 {
     $errno = 0; $errstr = '';
-    $fp = @fsockopen($host, $port, $errno, $errstr, 10);
+    $context = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+    $prefix = ($port == 993) ? 'ssl://' : '';
+    $fp = @stream_socket_client($prefix . $host . ':' . $port, $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $context);
     if (!$fp) return ['error' => "Connection failed: $errstr"];
-    fread($fp, 8192);
+
+    stream_set_timeout($fp, 5);
+    $buf = fread($fp, 8192);
+    if ($buf === false || $buf === '') return ['error' => 'No server greeting'];
+
     $tag = 1;
-    $send = function($c) use ($fp, &$tag) { fwrite($fp, "A$tag $c\r\n"); fflush($fp); $tag++; };
-    $recv = function() use ($fp) {
-        $lines = [];
-        while ($line = fgets($fp, 8192)) { $lines[] = rtrim($line); if (preg_match('/^A\d+ (OK|NO|BAD|BYE)/', $line)) break; }
+    $cmd = function($c) use ($fp, &$tag) { fwrite($fp, "A$tag $c\r\n"); fflush($fp); $tag++; };
+    $read = function() use ($fp) {
+        $lines = []; $buf = '';
+        do {
+            $chunk = fread($fp, 8192);
+            if ($chunk === false || $chunk === '') break;
+            $buf .= $chunk;
+        } while (strpos($chunk, "\r\n") !== false && !preg_match('/^A\d+ (OK|NO|BAD|BYE).*/m', $buf));
+        foreach (explode("\r\n", $buf) as $l) { $l = trim($l); if ($l) $lines[] = $l; }
         return $lines;
     };
-    $send("AUTH LOGIN");
-    $r = $recv();
-    if (preg_match('/^\+/', $r[0] ?? '')) { fwrite($fp, base64_encode($user) . "\r\n"); fflush($fp); $r = $recv(); }
-    if (preg_match('/^\+/', $r[0] ?? '')) { fwrite($fp, base64_encode($pass) . "\r\n"); fflush($fp); $r = $recv(); }
+
+    $cmd("LOGIN $user $pass");
+    $r = $read();
     if (!preg_match('/^A\d+ OK/', end($r))) { fclose($fp); return ['error' => 'Login failed']; }
-    $send("SELECT \"$mailbox\"");
-    $r = $recv();
+
+    $cmd("SELECT \"$mailbox\"");
+    $r = $read();
     $exists = 0;
     foreach ($r as $line) { if (preg_match('/^\* (\d+) EXISTS/', $line, $m)) $exists = (int)$m[1]; }
     if (!$exists) { fclose($fp); return []; }
+
     $start = max(1, $exists - $limit + 1);
-    $send("FETCH $start:$exists (FLAGS BODY[HEADER.FIELDS (FROM SUBJECT DATE)])");
-    $r = $recv();
+    $cmd("FETCH $start:$exists (FLAGS BODY[HEADER.FIELDS (FROM SUBJECT DATE)])");
+    $r = $read();
+
     $messages = []; $current = [];
     foreach ($r as $line) {
         if (preg_match('/^\* (\d+) FETCH/', $line, $m)) { if (!empty($current)) $messages[] = $current; $current = ['uid' => (int)$m[1]]; }
