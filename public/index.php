@@ -1192,15 +1192,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $filename = 'suggawayz-backup-' . date('Y-m-d-Hi') . '.sql';
             $path = $backupDir . '/' . $filename;
             $config = require dirname(__DIR__) . '/config/database.php';
-            $cmd = sprintf('mysqldump -h%s -P%s -u%s -p%s %s --no-tablespaces > %s 2>/dev/null',
-                escapeshellarg($config['host']), escapeshellarg($config['port']),
-                escapeshellarg($config['username']), escapeshellarg($config['password']),
-                escapeshellarg($config['database']), escapeshellarg($path));
-            exec($cmd, $output, $rc);
-            if ($rc === 0 && file_exists($path)) {
-                session_flash('notice', "Backup created: {$filename}");
-            } else {
-                // Fallback: PHP-based backup
+            $backupOk = false;
+
+            if (function_exists('exec')) {
+                $cmd = sprintf('mysqldump -h%s -P%s -u%s -p%s %s --no-tablespaces > %s 2>/dev/null',
+                    escapeshellarg($config['host']), escapeshellarg($config['port']),
+                    escapeshellarg($config['username']), escapeshellarg($config['password']),
+                    escapeshellarg($config['database']), escapeshellarg($path));
+                exec($cmd, $output, $rc);
+                $backupOk = ($rc === 0 && file_exists($path) && filesize($path) > 0);
+            }
+
+            if (!$backupOk) {
                 $tables = db()->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
                 $sql = "-- SUGGAWAYZ Database Backup\n-- Date: " . date('Y-m-d H:i:s') . "\n\n";
                 foreach ($tables as $table) {
@@ -1214,7 +1217,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sql .= "\n";
                 }
                 file_put_contents($path, $sql);
-                session_flash('notice', "Backup created (PHP fallback): {$filename}");
+                $backupOk = file_exists($path) && filesize($path) > 0;
+            }
+
+            if ($backupOk) {
+                session_flash('notice', "Backup created: {$filename}");
+            } else {
+                session_flash('error', 'Backup failed. Check storage permissions.');
             }
             redirect('/?page=admin&tab=security');
 
