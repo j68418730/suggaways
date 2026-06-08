@@ -531,11 +531,26 @@ function send_email(string $to, string $subject, string $body): bool
     if ($host) {
         return send_email_smtp($to, $subject, $body);
     }
-    $headers = "From: noreply@suggawayz.com\r\n";
-    $headers .= "Reply-To: support@suggawayz.com\r\n";
+
+    $fromEmail = site_setting('email_from_address', 'noreply@suggawayz.com');
+    $fromName = site_setting('email_from_name', 'SUGGAWAYZ');
+    $mid = time() . '.' . bin2hex(random_bytes(8)) . '@suggawayz.com';
+
+    $headers = "From: {$fromName} <{$fromEmail}>\r\n";
+    $headers .= "Reply-To: {$fromEmail}\r\n";
+    $headers .= "Return-Path: {$fromEmail}\r\n";
+    $headers .= "Message-ID: <{$mid}>\r\n";
     $headers .= "MIME-Version: 1.0\r\n";
     $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
-    return mail($to, $subject, $body, $headers);
+    $headers .= "X-Mailer: SUGGAWAYZ Mailer/1.0\r\n";
+    $headers .= "X-Priority: 3 (Normal)\r\n";
+    $headers .= "List-Unsubscribe: <mailto:{$fromEmail}?subject=unsubscribe>\r\n";
+
+    // Additional headers for better deliverability
+    $headers .= "Precedence: bulk\r\n";
+    $headers .= "Auto-Submitted: auto-generated\r\n";
+
+    return mail($to, $subject, $body, $headers, "-f {$fromEmail}");
 }
 
 function send_email_smtp(string $to, string $subject, string $body): bool
@@ -580,13 +595,38 @@ function send_email_smtp(string $to, string $subject, string $body): bool
     fwrite($fp, "RCPT TO:<{$to}>\r\n"); fflush($fp); $smtp_ok($fp);
     fwrite($fp, "DATA\r\n"); fflush($fp); $smtp_ok($fp, 354);
 
-    $headers = "From: {$fromName} <{$from}>\r\nReply-To: {$from}\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n";
+    $mid = time() . '.' . bin2hex(random_bytes(8)) . '@suggawayz.com';
+    $headers = "From: {$fromName} <{$from}>\r\nReply-To: {$from}\r\nReturn-Path: {$from}\r\nMessage-ID: <{$mid}>\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\nX-Mailer: SUGGAWAYZ Mailer/1.0\r\nList-Unsubscribe: <mailto:{$from}?subject=unsubscribe>\r\nPrecedence: bulk\r\nAuto-Submitted: auto-generated\r\n";
     fwrite($fp, "Subject: {$subject}\r\n{$headers}\r\n{$body}\r\n.\r\n"); fflush($fp);
     $result = $smtp_ok($fp);
 
     fwrite($fp, "QUIT\r\n"); fflush($fp);
     fclose($fp);
     return $result;
+}
+
+function imap_cmd(string $host, int $port, string $user, string $pass, string $command): array
+{
+    $errno = 0; $errstr = '';
+    $prefix = ($port == 993) ? 'ssl://' : '';
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+    $fp = @stream_socket_client($prefix . $host . ':' . $port, $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) return ['error' => "Connection failed: $errstr"];
+    stream_set_timeout($fp, 10);
+    $greeting = fread($fp, 8192);
+    $tag = 1;
+    $resp = '';
+
+    $doCmd = function($c) use ($fp, &$tag) { fwrite($fp, "A$tag $c\r\n"); fflush($fp); $tag++; };
+    $doCmd("LOGIN $user $pass");
+    do { $chunk = fread($fp, 8192); $resp .= $chunk; } while (!preg_match('/^A\d+ (OK|NO|BAD|BYE).*/m', $resp));
+    if (!preg_match('/^A\d+ OK/m', $resp)) { fclose($fp); return ['error' => 'Login failed']; }
+
+    $resp = '';
+    $doCmd($command);
+    do { $chunk = fread($fp, 8192); $resp .= $chunk; } while (!preg_match('/^A\d+ (OK|NO|BAD|BYE).*/m', $resp));
+    fclose($fp);
+    return ['resp' => $resp];
 }
 
 function imap_fetch_mail(string $host, int $port, string $user, string $pass, string $mailbox = 'INBOX', int $limit = 20): array

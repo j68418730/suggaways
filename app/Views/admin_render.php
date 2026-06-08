@@ -2619,16 +2619,11 @@ function admin_inbox(): void
         $activeMailbox = $viewMailbox ?: ($mailboxes[0]['username'] ?? '');
         $imapUser = $activeMailbox;
 
-        // Get password for this mailbox
+        // Get plain text password for this mailbox
         $imapPass = '';
-        if (file_exists($dbPath) && $activeMailbox) {
-            try {
-                $sqldb = new PDO("sqlite:$dbPath");
-                $stmt = $sqldb->prepare("SELECT password FROM mailbox WHERE username=?");
-                $stmt->execute([$activeMailbox]);
-                $row = $stmt->fetch(PDO::FETCH_ASSOC);
-                if ($row) $imapPass = $row['password'];
-            } catch (Exception $e) {}
+        $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
+        if ($activeMailbox && isset($creds[$activeMailbox])) {
+            $imapPass = $creds[$activeMailbox];
         }
 
         if ($viewMsg && $imapPass) {

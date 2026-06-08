@@ -1160,16 +1160,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$localPart || strlen($password) < 6) { session_flash('error', 'Username and password (min 6 chars) required.'); redirect('/?page=admin&tab=inbox&subtab=accounts'); }
             $email = "$localPart@$domain";
             $maildir = "$domain/$localPart/";
-            $hash = crypt($password, '$1$' . bin2hex(random_bytes(6))); // MD5-CRYPT for Dovecot
+            $hash = crypt($password, '$1$' . bin2hex(random_bytes(6)));
             $dbPath = '/www/vmail/postfixadmin.db';
             if (!file_exists($dbPath)) { session_flash('error', 'Mail database not found.'); redirect('/?page=admin&tab=inbox&subtab=accounts'); }
             try {
                 $sqldb = new PDO("sqlite:$dbPath");
                 $stmt = $sqldb->prepare("INSERT INTO mailbox (username, password, password_encode, full_name, maildir, quota, local_part, domain, created, modified, active) VALUES (?,?,'{MD5-CRYPT}',?,?,?,?,?,datetime('now'),datetime('now'),1)");
                 $stmt->execute([$email, $hash, $fullName, $maildir, $quota, $localPart, $domain]);
-                // Ensure maildir exists
                 $mailDirPath = "/www/vmail/$domain/$localPart";
                 if (!is_dir($mailDirPath)) @mkdir($mailDirPath, 0755, true);
+                // Store plain password for webmail access
+                $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
+                $creds[$email] = $password;
+                set_site_setting('_mailbox_creds', json_encode($creds));
                 session_flash('notice', "Email account $email created.");
             } catch (Exception $e) {
                 session_flash('error', 'Failed to create email: ' . $e->getMessage());
@@ -1194,6 +1197,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hash = crypt($newPass, '$1$' . bin2hex(random_bytes(6)));
                 $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
                 $sqldb->prepare("UPDATE mailbox SET password=?, modified=datetime('now') WHERE username=?")->execute([$hash, $email]);
+                $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
+                $creds[$email] = $newPass;
+                set_site_setting('_mailbox_creds', json_encode($creds));
                 session_flash('notice', "Password changed for $email.");
             } else {
                 session_flash('error', 'Password must be at least 6 characters.');
@@ -1224,12 +1230,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $mailbox = $_POST['mailbox'] ?? '';
             $msgUid = (int)($_POST['msg_uid'] ?? 0);
             if ($mailbox && $msgUid) {
-                $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
-                $stmt = $sqldb->prepare("SELECT password FROM mailbox WHERE username=?");
-                $stmt->execute([$mailbox]);
-                $row = $stmt->fetch(PDO::FETCH_ASSOC);
-                if ($row) {
-                    $pass = $row['password'];
+                $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
+                $pass = $creds[$mailbox] ?? '';
+                if ($pass) {
                     $host = site_setting('imap_host', 'localhost');
                     $port = (int)site_setting('imap_port', '143');
                     imap_cmd($host, $port, $mailbox, $pass, "STORE $msgUid +FLAGS (\Deleted)");
