@@ -248,10 +248,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 redirect('/?page=checkout');
             }
 
-        case 'contact':
-            db()->prepare('INSERT INTO contact_submissions (name, email, subject, message) VALUES (?, ?, ?, ?)')
-                ->execute([$_POST['name'], $_POST['email'], $_POST['subject'] ?? null, $_POST['message']]);
-            session_flash('notice', 'Message sent! We will get back to you soon.');
+         case 'contact':
+            $email = trim($_POST['email'] ?? '');
+            $name = trim($_POST['name'] ?? '');
+            $subject = trim($_POST['subject'] ?? '');
+            $message = trim($_POST['message'] ?? '');
+            $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+
+            // Check if blocked
+            $blocked = db()->prepare("SELECT id FROM blocked_contacts WHERE email=? OR ip_address=?");
+            $blocked->execute([$email, $ip]);
+            if ($blocked->fetch()) {
+                session_flash('error', 'Your contact has been blocked due to previous spam.');
+                redirect('/?page=contact');
+            }
+
+            // Spam detection
+            $spamScore = 0;
+            $spamPatterns = ['<a href', 'http://', 'https://', 'www.', '.com', '.xyz', 'buy now', 'click here', 'free', 'winner', 'congratulations', 'cash', 'bitcoin', 'crypt', 'seo', 'ranking', 'traffic', 'viagra', 'cialis', 'casino', 'lottery', '[url=', '[/url]', '[link=', 'rich', 'earn money'];
+            $lowerMsg = strtolower($message);
+            foreach ($spamPatterns as $pattern) {
+                if (strpos($lowerMsg, $pattern) !== false) $spamScore++;
+            }
+            if (strlen($message) > 2000) $spamScore++;
+            if (preg_match('/[^\x20-\x7E\x0A\x0D]/', $message)) $spamScore++;
+            // Check frequency from same email/IP
+            $freq = db()->prepare("SELECT COUNT(*) FROM contact_submissions WHERE (email=? OR ip_address=?) AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)");
+            $freq->execute([$email, $ip]);
+            if ((int)$freq->fetchColumn() > 3) $spamScore += 3;
+
+            $isSpam = $spamScore >= 3 ? 1 : 0;
+
+            db()->prepare("INSERT INTO contact_submissions (name, email, subject, message, ip_address, is_spam) VALUES (?, ?, ?, ?, ?, ?)")
+                ->execute([$name, $email, $subject, $message, $ip, $isSpam]);
+
+            if ($isSpam) {
+                session_flash('error', 'Message flagged as spam and quarantined.');
+            } else {
+                session_flash('notice', 'Message sent! We will get back to you soon.');
+            }
             redirect('/?page=contact');
 
         case 'subscribe':
@@ -420,19 +455,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             redirect('/?page=admin&tab=products');
 
-        case 'admin_add_coming_soon':
+         case 'admin_add_coming_soon':
             if (!$user || !is_admin($user)) { abort(403); }
             $name = trim($_POST['name']);
-            db()->prepare('INSERT INTO coming_soon (name, description, price, image, category_id, release_date) VALUES (?, ?, ?, ?, ?, ?)')
-                ->execute([$name, $_POST['description'] ?? '', (float)$_POST['price'], $_POST['image'] ?? '', $_POST['category_id'] ? (int)$_POST['category_id'] : null, $_POST['release_date']]);
+            $releaseDate = $_POST['release_date'] . ' ' . ($_POST['release_time'] ?? '13:00') . ':00';
+            db()->prepare('INSERT INTO coming_soon (name, description, price, image, category_id, release_date, is_notified) VALUES (?, ?, ?, ?, ?, ?, 0)')
+                ->execute([$name, $_POST['description'] ?? '', (float)$_POST['price'], $_POST['image'] ?? '', $_POST['category_id'] ? (int)$_POST['category_id'] : null, $releaseDate]);
             session_flash('notice', "{$name} added to Coming Soon.");
             redirect('/?page=admin&tab=comingsoon');
 
         case 'admin_edit_coming_soon':
             if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE coming_soon SET name=?, price=?, release_date=? WHERE id=?')
-                ->execute([$_POST['name'], (float)$_POST['price'], $_POST['release_date'], (int)$_POST['id']]);
-            session_flash('notice', 'Coming soon item updated.');
+            $releaseDate = $_POST['release_date'] . ' ' . ($_POST['release_time'] ?? '13:00') . ':00';
+            db()->prepare('UPDATE coming_soon SET name=?, price=?, release_date=?, is_notified=0 WHERE id=?')
+                ->execute([$_POST['name'], (float)$_POST['price'], $releaseDate, (int)$_POST['id']]);
+            session_flash('notice', 'Coming soon item updated. Member notification will re-send.');
             redirect('/?page=admin&tab=comingsoon');
 
         case 'admin_delete_coming_soon':
@@ -797,6 +834,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_flash('notice', 'Blog post deleted.');
             redirect('/?page=admin&tab=blog');
 
+         // === CONTACT / SPAM ===
+        case 'admin_mark_contact_read':
+            if (!$user || !is_admin($user)) { abort(403); }
+            db()->prepare("UPDATE contact_submissions SET is_read=1 WHERE id=?")->execute([(int)$_POST['id']]);
+            redirect('/?page=admin&tab=contact');
+
+        case 'admin_mark_contact_spam':
+            if (!$user || !is_admin($user)) { abort(403); }
+            db()->prepare("UPDATE contact_submissions SET is_spam=1 WHERE id=?")->execute([(int)$_POST['id']]);
+            session_flash('notice', 'Marked as spam.');
+            redirect('/?page=admin&tab=contact');
+
+        case 'admin_block_contact':
+            if (!$user || !is_admin($user)) { abort(403); }
+            $email = trim($_POST['email'] ?? '');
+            $ip = trim($_POST['ip'] ?? '');
+            if ($email) {
+                db()->prepare("INSERT IGNORE INTO blocked_contacts (email, ip_address, reason, blocked_by) VALUES (?,?,?,?)")
+                    ->execute([$email, $ip, 'Manually blocked by admin', (int)$user['id']]);
+                session_flash('notice', "Blocked $email");
+            }
+            redirect('/?page=admin&tab=contact');
+
+        case 'admin_delete_contact':
+            if (!$user || !is_admin($user)) { abort(403); }
+            db()->prepare('DELETE FROM contact_submissions WHERE id=?')->execute([(int)$_POST['id']]);
+            session_flash('notice', 'Contact submission deleted.');
+            redirect('/?page=admin&tab=contact');
+
+        // === SIZE CHARTS ===
+        case 'admin_save_size_chart':
+            if (!$user || !is_admin($user)) { abort(403); }
+            $name = trim($_POST['name'] ?? '');
+            $catId = (int)($_POST['category_id'] ?? 0);
+            $sizes = $_POST['size'] ?? [];
+            $chest = $_POST['chest'] ?? [];
+            $waist = $_POST['waist'] ?? [];
+            $hips = $_POST['hips'] ?? [];
+            $length = $_POST['length'] ?? [];
+            $data = [];
+            foreach ($sizes as $i => $s) {
+                if (trim($s)) $data[] = ['size' => trim($s), 'chest' => trim($chest[$i] ?? ''), 'waist' => trim($waist[$i] ?? ''), 'hips' => trim($hips[$i] ?? ''), 'length' => trim($length[$i] ?? '')];
+            }
+            if ($name && !empty($data)) {
+                db()->prepare("INSERT INTO size_charts (name, category_id, data) VALUES (?,?,?)")->execute([$name, $catId ?: null, json_encode($data)]);
+                session_flash('notice', "Size chart '$name' saved.");
+            }
+            redirect('/?page=admin&tab=sizecharts');
+
+        case 'admin_delete_size_chart':
+            if (!$user || !is_admin($user)) { abort(403); }
+            db()->prepare("DELETE FROM size_charts WHERE id=?")->execute([(int)$_POST['id']]);
+            session_flash('notice', 'Size chart deleted.');
+            redirect('/?page=admin&tab=sizecharts');
+
+        case 'admin_update_size_chart':
+            if (!$user || !is_admin($user)) { abort(403); }
+            $id = (int)$_POST['id'];
+            $sizes = $_POST['size'] ?? [];
+            $chest = $_POST['chest'] ?? [];
+            $waist = $_POST['waist'] ?? [];
+            $hips = $_POST['hips'] ?? [];
+            $length = $_POST['length'] ?? [];
+            $data = [];
+            foreach ($sizes as $i => $s) {
+                if (trim($s)) $data[] = ['size' => trim($s), 'chest' => trim($chest[$i] ?? ''), 'waist' => trim($waist[$i] ?? ''), 'hips' => trim($hips[$i] ?? ''), 'length' => trim($length[$i] ?? '')];
+            }
+            if (!empty($data)) {
+                db()->prepare("UPDATE size_charts SET data=? WHERE id=?")->execute([json_encode($data), $id]);
+                session_flash('notice', 'Size chart updated.');
+            }
+            redirect('/?page=admin&tab=sizecharts');
+
         // === Lookbook Events ===
         case 'admin_add_lookbook':
             if (!$user || !is_admin($user)) { abort(403); }
@@ -1138,10 +1248,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = db()->prepare("SELECT DATEDIFF(?, CURDATE())");
                 $stmt->execute([$drop['rdate']]);
                 $daysUntil = (int)$stmt->fetchColumn();
-                if ($daysUntil <= 10 && $daysUntil >= 0) {
+                if ($daysUntil <= 15 && $daysUntil >= 0) {
                     foreach ($members as $member) {
-                        $body = "Hey {$member['full_name']},<br><br>🔥 <strong>{$drop['name']}</strong> drops in {$daysUntil} days!<br><br>As a Sugga Gang member, you get early access. Stay tuned for your exclusive link.<br><br>— SUGGAWAYZ";
-                        if (send_email($member['email'], "🔔 Early Access: {$drop['name']} dropping soon!", $body)) $notified++;
+                        $body = "Hey {$member['full_name']},<br><br>🚀 <strong>{$drop['name']}</strong> drops in {$daysUntil} days!<br><br>"
+                            . "As a <strong>Sugga Gang Member</strong>, you get:<br>"
+                            . "✅ <strong>Early access</strong> before the general public<br>"
+                            . "✅ <strong>15% off</strong> any order of $75+ (use your membership discount)<br><br>"
+                            . "Stay tuned — your exclusive early access link will be sent soon.<br><br>"
+                            . "— SUGGAWAYZ";
+                        if (send_email($member['email'], "🔔 Member Early Access: {$drop['name']} drops in {$daysUntil} days!", $body)) $notified++;
                     }
                     db()->prepare("UPDATE coming_soon SET is_notified=1 WHERE id=?")->execute([(int)$drop['id']]);
                 }
@@ -1395,6 +1510,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             redirect('/?page=admin&tab=security');
 
+        case 'join_membership':
+            if (!$user) { session_flash('error', 'Please log in to join.'); redirect('/?page=login'); }
+            $planId = (int)($_POST['plan_id'] ?? 0);
+            $autoPay = !empty($_POST['auto_pay']);
+            $plan = db()->prepare('SELECT * FROM membership_plans WHERE id=? AND is_active=1');
+            $plan->execute([$planId]);
+            $planData = $plan->fetch();
+            if (!$planData) { session_flash('error', 'Invalid plan.'); redirect('/?page=membership'); }
+            $existing = db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active'");
+            $existing->execute([(int)$user['id']]);
+            if ($existing->fetch()) { session_flash('error', 'You already have an active membership.'); redirect('/?page=membership'); }
+            db()->prepare("INSERT INTO user_memberships (user_id, plan_id, status, auto_pay, start_date, end_date) VALUES (?,?,'active',?,NOW(),DATE_ADD(NOW(), INTERVAL 1 MONTH))")
+                ->execute([(int)$user['id'], $planId, $autoPay ? 1 : 0]);
+            $invNum = 'INV-MEM-' . time();
+            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")
+                ->execute([(int)$user['id'], $invNum, (float)$planData['price']]);
+            session_flash('notice', 'Welcome to the Sugga Gang! 🎉 Your first invoice has been generated.');
+            redirect('/?page=membership');
+
         default:
             redirect_back();
     }
@@ -1578,11 +1712,13 @@ case 'returns':
     $content = render_static_page($page);
     break;
 
-case 'size-guide':
-    $page = db()->query("SELECT * FROM pages WHERE slug = 'size-guide' AND published = 1")->fetch();
-    $hero_content = '<p class="eyebrow">Customer Care</p><h1>Size Guide</h1>';
-    $content = render_static_page($page);
-    break;
+    case 'size-guide':
+        $page = db()->query("SELECT * FROM pages WHERE slug = 'size-guide' AND published = 1")->fetch();
+        $sizeCharts = db()->query("SELECT * FROM size_charts WHERE is_active=1 ORDER BY name")->fetchAll();
+        $content = render_size_guide($page, $sizeCharts);
+        $seo_title = 'Size Guide';
+        $hero_class = 'hero-sub';
+        break;
 
 case 'shipping':
     $methods = db()->query('SELECT * FROM shipping WHERE active = 1 ORDER BY region, carrier')->fetchAll();
