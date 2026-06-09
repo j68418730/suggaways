@@ -81,60 +81,16 @@ function render_admin_dashboard(
       </div>
     <?php endif; ?>
     <div class="admin-layout">
-      <div class="admin-sidebar">
-        <ul class="admin-nav" id="adminNav">
-          <?php
-          $menuItems = [
-            '📊' => ['label' => 'Dashboard', 'children' => ['dashboard' => 'Dashboard']],
-            '🛍️' => ['label' => 'Store', 'children' => [
-              'products' => 'Products', 'categories' => 'Categories', 'comingsoon' => 'Coming Soon',
-              'inventory' => 'Inventory', 'reorder' => 'Reorder', 'sizecharts' => 'Size Charts'
-            ]],
-            '📋' => ['label' => 'Orders & Sales', 'children' => [
-              'orders' => 'Orders', 'customers' => 'Customers', 'coupons' => 'Coupons',
-              'pos' => 'POS Drawer', 'payments' => 'Payments', 'shipping' => 'Shipping'
-            ]],
-            '👥' => ['label' => 'User & Staff', 'children' => [
-              'employees' => 'Employees', 'memberships' => 'Members', 'signins' => 'Sign-ins', 'audit' => 'Audit Log'
-            ]],
-            '📧' => ['label' => 'Communication', 'children' => [
-              'inbox' => 'Inbox', 'newsletter' => 'Newsletter', 'contact' => 'Contact'
-            ]],
-            '📝' => ['label' => 'Content', 'children' => [
-              'pages' => 'Pages', 'blog' => 'Blog', 'events' => 'Events'
-            ]],
-            '🔧' => ['label' => 'Operations', 'children' => [
-              'todos' => 'Todo Board', 'bugreports' => 'Bug Reports'
-            ]],
-            '⚙️' => ['label' => 'System', 'children' => [
-              'settings' => 'Settings', 'security' => 'Security'
-            ]],
-          ];
-          foreach ($menuItems as $icon => $menu):
-            $hasChildren = count($menu['children']) > 1 || key($menu['children']) !== reset(array_keys($menu['children']));
-            $isActive = isset($menu['children'][$effectiveTab]);
-          ?>
-            <li class="<?= $hasChildren ? 'sub-menu' : '' ?> <?= $isActive ? 'active' : '' ?>">
-              <a href="<?= $hasChildren ? 'javascript:void(0)' : '/?page=admin&tab=' . key($menu['children']) ?>" <?= $hasChildren ? 'onclick="toggleSub(this)"' : '' ?>>
-                <span class="menu-icon"><?= $icon ?></span>
-                <span class="menu-text"><?= $menu['label'] ?></span>
-                <?php if ($hasChildren): ?><i class="arrow">▶</i><?php endif; ?>
-              </a>
-              <?php if ($hasChildren): ?>
-              <ul>
-                <?php foreach ($menu['children'] as $tab => $label):
-                  $superOnly = in_array($tab, ['inbox','memberships','todos','security'], true);
-                  if ($superOnly && !$isSuperAdmin) continue;
-                ?>
-                  <li class="<?= $effectiveTab === $tab ? 'active' : '' ?>">
-                    <a href="/?page=admin&tab=<?= $tab ?>"><?= $label ?></a>
-                  </li>
-                <?php endforeach; ?>
-              </ul>
-              <?php endif; ?>
-            </li>
+      <div class="admin-sidebar panel">
+        <h3>Webmaster v2</h3>
+        <p class="hint"><?= e($user['full_name'] ?: $user['username']) ?></p>
+        <nav class="admin-nav">
+          <?php $origOrder = ['dashboard','products','categories','comingsoon','orders','customers','coupons','pos','payments','shipping','inventory','reorder','sizecharts','employees','memberships','signins','audit','inbox','newsletter','contact','pages','blog','events','todos','bugreports','settings','security'];
+          $labels = ['dashboard'=>'📊 Dashboard','products'=>'📦 Products','categories'=>'🏷️ Categories','comingsoon'=>'⏳ Coming Soon','orders'=>'📋 Orders','customers'=>'👤 Customers','coupons'=>'🎫 Coupons','pos'=>'🧾 POS Drawer','payments'=>'💳 Payments','shipping'=>'🚚 Shipping','inventory'=>'📦 Inventory','reorder'=>'🔄 Reorder','sizecharts'=>'📏 Size Charts','employees'=>'👥 Employees','memberships'=>'👥 Members','signins'=>'🔑 Sign-ins','audit'=>'📜 Audit Log','inbox'=>'📨 Inbox','newsletter'=>'📧 Newsletter','contact'=>'📧 Contact','pages'=>'📄 Pages','blog'=>'✍️ Blog','events'=>'📅 Events','todos'=>'✅ Todo Board','bugreports'=>'🐛 Bug Reports','settings'=>'⚙️ Settings','security'=>'🔒 Security'];
+          foreach ($origOrder as $tabKey): $superOnly = in_array($tabKey, ['inbox','memberships','todos','security'], true); if ($superOnly && !$isSuperAdmin) continue; ?>
+            <a href="/?page=admin&tab=<?= $tabKey ?>" class="<?= $effectiveTab === $tabKey ? 'active' : '' ?>"><?= $labels[$tabKey] ?? $tabKey ?></a>
           <?php endforeach; ?>
-        </ul>
+        </nav>
       </div>
 
 
@@ -173,25 +129,6 @@ function render_admin_dashboard(
         ?>
       </div>
     </div>
-    <script>
-    function toggleSub(el) {
-      var li = el.parentNode;
-      var ul = li.querySelector('ul');
-      var arrow = li.querySelector('.arrow');
-      if (ul) {
-        if (ul.style.display === 'block') {
-          ul.style.display = 'none';
-          if (arrow) arrow.style.transform = 'rotate(0deg)';
-        } else {
-          document.querySelectorAll('#adminNav li.sub-menu ul').forEach(function(u) { u.style.display = 'none'; });
-          document.querySelectorAll('#adminNav li.sub-menu .arrow').forEach(function(a) { a.style.transform = 'rotate(0deg)'; });
-          ul.style.display = 'block';
-          if (arrow) arrow.style.transform = 'rotate(90deg)';
-        }
-      }
-      return false;
-    }
-    </script>
     <?php if ($isSuperAdmin && !empty($todos)): ?>
     <div class="panel" style="margin-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
