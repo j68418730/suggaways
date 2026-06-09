@@ -2320,14 +2320,30 @@ function admin_memberships(): void
     <div class="panel">
       <h3>Membership Plans</h3>
       <table class="table" style="font-size:13px">
-        <tr><th>Name</th><th>Price</th><th>Description</th><th>Benefits</th><th>Status</th></tr>
+        <tr><th>Name</th><th>Price</th><th>Description</th><th>Benefits</th><th>Status</th><th>Actions</th></tr>
         <?php foreach ($plans as $plan): $benefits = json_decode($plan['benefits'] ?? '[]', true); ?>
           <tr>
-            <td><strong><?= e($plan['name']) ?></strong></td>
-            <td>$<?= e(number_format((float)$plan['price'], 2)) ?>/mo</td>
-            <td style="font-size:11px;color:var(--muted)"><?= e(substr($plan['description'] ?? '', 0, 60)) ?></td>
-            <td style="font-size:11px"><?= e(implode(', ', array_slice($benefits, 0, 3))) ?></td>
-            <td><span class="badge" style="background:<?= $plan['is_active'] ? 'var(--green)' : 'var(--red)' ?>"><?= $plan['is_active'] ? 'Active' : 'Inactive' ?></span></td>
+            <form method="post" style="display:contents">
+              <?= csrf_field() ?>
+              <input type="hidden" name="action" value="admin_edit_membership_plan">
+              <input type="hidden" name="id" value="<?= (int)$plan['id'] ?>">
+              <td><input name="name" value="<?= e($plan['name']) ?>" style="width:90px;padding:2px 4px;font-size:11px"></td>
+              <td><input name="price" value="<?= e($plan['price']) ?>" type="number" step="0.01" style="width:60px;padding:2px 4px;font-size:11px"></td>
+              <td><input name="description" value="<?= e($plan['description'] ?? '') ?>" style="width:120px;padding:2px 4px;font-size:11px"></td>
+              <td><input name="benefits" value="<?= e(implode(', ', $benefits)) ?>" style="width:120px;padding:2px 4px;font-size:11px" placeholder="comma-separated"></td>
+              <td>
+                <select name="is_active" style="padding:2px 4px;font-size:11px">
+                  <option value="1" <?= $plan['is_active'] ? 'selected' : '' ?>>Active</option>
+                  <option value="0" <?= !$plan['is_active'] ? 'selected' : '' ?>>Inactive</option>
+                </select>
+              </td>
+              <td style="white-space:nowrap">
+                <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px">💾</button>
+              </td>
+            </form>
+            <td style="white-space:nowrap">
+              <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_membership_plan"><input type="hidden" name="id" value="<?= (int)$plan['id'] ?>"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete plan?')">Del</button></form>
+            </td>
           </tr>
         <?php endforeach; ?>
       </table>
