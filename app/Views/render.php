@@ -390,6 +390,39 @@ function render_collections(array $collections): string
 function render_new_drops(array $products): string
 {
     ob_start(); ?>
+    <div id="cdCountdown" style="text-align:center;padding:16px;margin-bottom:20px;background:rgba(0,200,255,0.05);border:1px solid rgba(0,200,255,0.15);border-radius:8px;font-family:var(--mono)">
+      <p style="font-size:12px;color:var(--cyan);margin-bottom:6px">🚀 SITE GOES LIVE IN</p>
+      <div style="display:flex;justify-content:center;gap:16px;font-size:28px;font-weight:800;color:var(--text)">
+        <span><span id="cdDays">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">DAYS</span></span>
+        <span style="color:var(--cyan)">:</span>
+        <span><span id="cdHours">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">HOURS</span></span>
+        <span style="color:var(--cyan)">:</span>
+        <span><span id="cdMins">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">MINS</span></span>
+        <span style="color:var(--cyan)">:</span>
+        <span><span id="cdSecs">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">SECS</span></span>
+      </div>
+    </div>
+    <script>
+    (function(){
+      var now = new Date();
+      var target = new Date(now.getFullYear(), now.getMonth(), 16, 13, 0, 0);
+      if (now.getDate() > 16 || (now.getDate() === 16 && now.getHours() >= 13)) {
+        var el = document.getElementById('cdCountdown');
+        if (el) el.style.display = 'none';
+        return;
+      }
+      function update() {
+        var diff = Math.max(0, Math.floor((target - new Date()) / 1000));
+        document.getElementById('cdDays').textContent = String(Math.floor(diff / 86400)).padStart(2,'0');
+        document.getElementById('cdHours').textContent = String(Math.floor((diff % 86400) / 3600)).padStart(2,'0');
+        document.getElementById('cdMins').textContent = String(Math.floor((diff % 3600) / 60)).padStart(2,'0');
+        document.getElementById('cdSecs').textContent = String(diff % 60).padStart(2,'0');
+        if (diff <= 0) document.getElementById('cdCountdown').style.display = 'none';
+      }
+      update();
+      setInterval(update, 1000);
+    })();
+    </script>
     <section class="product-grid">
       <?php foreach ($products as $product): ?>
         <article class="product-card new-badge">
