@@ -11,44 +11,48 @@ function render_admin_dashboard(
     $isSuperAdmin = in_array($user['role'] ?? '', ['webmaster', 'super_admin']);
     $isAdmin = is_admin($user);
     $navGroups = [
-        'store' => ['label' => '📦 Store', 'items' => [
-            ['tab' => 'dashboard', 'label' => '📊 Dashboard'],
-            ['tab' => 'products',  'label' => '📦 Products'],
-            ['tab' => 'categories','label' => '🏷️ Categories'],
-            ['tab' => 'comingsoon','label' => '⏳ Coming Soon'],
-            ['tab' => 'inventory', 'label' => '📦 Inventory'],
-            ['tab' => 'reorder',   'label' => '🔄 Reorder'],
+        'dashboard' => ['label' => '📊 Dashboard', 'items' => [
+            ['tab' => 'dashboard', 'label' => 'Dashboard'],
         ]],
-        'orders' => ['label' => '🛒 Sales', 'items' => [
-            ['tab' => 'orders',    'label' => '📋 Orders'],
-            ['tab' => 'customers', 'label' => '👤 Customers'],
-            ['tab' => 'coupons',   'label' => '🎫 Coupons'],
-            ['tab' => 'pos',       'label' => '🧾 POS Drawer'],
+        'store' => ['label' => '🛍️ Store Management', 'items' => [
+            ['tab' => 'products',  'label' => 'Products'],
+            ['tab' => 'categories','label' => 'Categories'],
+            ['tab' => 'comingsoon','label' => 'Coming Soon'],
+            ['tab' => 'inventory', 'label' => 'Inventory'],
+            ['tab' => 'reorder',   'label' => 'Reorder'],
+            ['tab' => 'sizecharts','label' => 'Size Charts'],
         ]],
-        'admin' => ['label' => '⚙️ Admin', 'items' => [
-            ['tab' => 'employees', 'label' => '👥 Employees'],
-            ['tab' => 'payments',  'label' => '💳 Payments'],
-            ['tab' => 'audit',     'label' => '📜 Audit Log'],
-            ['tab' => 'signins',   'label' => '🔑 Sign-ins'],
+        'sales' => ['label' => '📋 Orders & Sales', 'items' => [
+            ['tab' => 'orders',    'label' => 'Orders'],
+            ['tab' => 'customers', 'label' => 'Customers'],
+            ['tab' => 'coupons',   'label' => 'Coupons'],
+            ['tab' => 'pos',       'label' => 'POS Drawer'],
+            ['tab' => 'payments',  'label' => 'Payments'],
+            ['tab' => 'shipping',  'label' => 'Shipping'],
+        ]],
+        'staff' => ['label' => '👥 User & Staff', 'items' => [
+            ['tab' => 'employees', 'label' => 'Employees'],
+            ['tab' => 'memberships','label'=> 'Members'],
+            ['tab' => 'signins',   'label' => 'Sign-ins'],
+            ['tab' => 'audit',     'label' => 'Audit Log'],
+        ]],
+        'communication' => ['label' => '📧 Communication', 'items' => [
+            ['tab' => 'inbox',     'label' => 'Inbox'],
+            ['tab' => 'newsletter','label' => 'Newsletter'],
+            ['tab' => 'contact',   'label' => 'Contact Forms'],
         ]],
         'content' => ['label' => '📝 Content', 'items' => [
-            ['tab' => 'bugreports','label' => '🐛 Bug Reports'],
-            ['tab' => 'pages',     'label' => '📄 Pages'],
-            ['tab' => 'blog',      'label' => '✍️ Blog'],
-            ['tab' => 'events',    'label' => '📅 Events'],
-            ['tab' => 'contact',   'label' => '📧 Contact'],
+            ['tab' => 'pages',     'label' => 'Pages'],
+            ['tab' => 'blog',      'label' => 'Blog'],
+            ['tab' => 'events',    'label' => 'Events'],
         ]],
-        'tools' => ['label' => '🔧 Tools', 'items' => [
-            ['tab' => 'sizecharts','label' => '📏 Size Charts'],
-            ['tab' => 'shipping',  'label' => '🚚 Shipping'],
-            ['tab' => 'inbox',     'label' => '📨 Inbox'],
-            ['tab' => 'newsletter','label' => '📧 Newsletter'],
-            ['tab' => 'memberships','label'=> '👥 Members'],
-            ['tab' => 'todos',     'label' => '✅ Todo'],
+        'tools' => ['label' => '🔧 Operations', 'items' => [
+            ['tab' => 'todos',     'label' => 'Todo Board'],
+            ['tab' => 'bugreports','label' => 'Bug Reports'],
         ]],
-        'system' => ['label' => '🔐 System', 'items' => [
-            ['tab' => 'settings',  'label' => '⚙️ Settings'],
-            ['tab' => 'security',  'label' => '🔒 Security'],
+        'system' => ['label' => '⚙️ System', 'items' => [
+            ['tab' => 'settings',  'label' => 'Settings'],
+            ['tab' => 'security',  'label' => 'Security'],
         ]],
     ];
     // Build flat list for employee viewable check
@@ -83,14 +87,19 @@ function render_admin_dashboard(
           <span id="navToggleIcon" style="font-size:14px;color:var(--text2)">◀</span>
         </div>
         <nav class="admin-nav" id="adminNav">
-          <?php foreach ($allNavItems as $tabKey): 
-            // Find the label for this tab
-            $label = $tabKey;
-            foreach ($navGroups as $g) foreach ($g['items'] as $item) { if ($item['tab'] === $tabKey) { $label = $item['label']; break 2; } }
-            $superOnly = in_array($tabKey, ['inbox','memberships','todos','security'], true);
-            if ($superOnly && !$isSuperAdmin) continue;
-          ?>
-            <a href="/?page=admin&tab=<?= $tabKey ?>" class="<?= $effectiveTab === $tabKey ? 'active' : '' ?>"><?= $label ?></a>
+          <?php foreach ($navGroups as $gk => $g): ?>
+            <div class="nav-group-header" onclick="toggleGroup('<?= $gk ?>')">
+              <span><?= $g['label'] ?></span>
+              <span class="nav-group-arrow" id="arr_<?= $gk ?>">▼</span>
+            </div>
+            <div class="nav-group-items" id="grp_<?= $gk ?>">
+              <?php foreach ($g['items'] as $item):
+                $superOnly = in_array($item['tab'], ['inbox','memberships','todos','security'], true);
+                if ($superOnly && !$isSuperAdmin) continue;
+              ?>
+                <a href="/?page=admin&tab=<?= $item['tab'] ?>" class="<?= $effectiveTab === $item['tab'] ? 'active' : '' ?>"><?= $item['label'] ?></a>
+              <?php endforeach; ?>
+            </div>
           <?php endforeach; ?>
         </nav>
       </div>
@@ -100,6 +109,17 @@ function render_admin_dashboard(
         var icon = document.getElementById('navToggleIcon');
         if (nav.style.display === 'none') { nav.style.display = 'flex'; icon.textContent = '◀'; }
         else { nav.style.display = 'none'; icon.textContent = '▶'; }
+      }
+      function toggleGroup(g) {
+        var items = document.getElementById('grp_' + g);
+        var arr = document.getElementById('arr_' + g);
+        if (items.style.display === 'none') {
+          items.style.display = 'block';
+          arr.style.transform = 'rotate(0deg)';
+        } else {
+          items.style.display = 'none';
+          arr.style.transform = 'rotate(-90deg)';
+        }
       }
       </script>
 
