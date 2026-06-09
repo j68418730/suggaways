@@ -488,6 +488,15 @@ textarea { min-height: 110px; resize: vertical; }
   border-radius: 4px;
 }
 .admin-nav a:hover, .admin-nav a.active { background: rgba(0,140,255,0.12); color: var(--cyan); }
+.nav-group-header {
+  display:flex;align-items:center;justify-content:space-between;
+  padding:6px 12px;margin-top:8px;border:1px solid var(--line-soft);
+  font-size:10px;font-weight:700;color:var(--text2);
+  text-transform:uppercase;letter-spacing:0.08em;
+  cursor:pointer;border-radius:4px;transition:.15s;
+}
+.nav-group-header:hover { background:rgba(0,200,255,0.05); color:var(--cyan); border-color:var(--line); }
+.nav-group-arrow { font-size:8px; transition:transform .2s; }
 
 /* Tables */
 .table { width: 100%; border-collapse: collapse; font-size: 14px; }
