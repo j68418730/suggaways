@@ -16,9 +16,8 @@ function render_home(array $featured, array $newDrops, array $collections, array
         }
     }
     ob_start(); ?>
-    <?php if ($earliestRelease): ?>
     <div id="dropCountdown" style="text-align:center;padding:16px;margin-bottom:20px;background:rgba(0,200,255,0.05);border:1px solid rgba(0,200,255,0.15);border-radius:8px;font-family:var(--mono)">
-      <p style="font-size:12px;color:var(--cyan);margin-bottom:6px">🚀 NEXT DROP: <strong><?= e(strtoupper($earliestName)) ?></strong></p>
+      <p style="font-size:12px;color:var(--cyan);margin-bottom:6px">🚀 SITE GOES LIVE IN</p>
       <div style="display:flex;justify-content:center;gap:16px;font-size:28px;font-weight:800;color:var(--text)">
         <span><span id="cdDays">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">DAYS</span></span>
         <span style="color:var(--cyan)">:</span>
@@ -31,9 +30,10 @@ function render_home(array $featured, array $newDrops, array $collections, array
     </div>
     <script>
     (function(){
-      var target = new Date(<?= date('Y', $earliestRelease) ?>, <?= date('m', $earliestRelease)-1 ?>, <?= date('d', $earliestRelease) ?>, <?= date('H', $earliestRelease) ?>, <?= date('i', $earliestRelease) ?>, 0);
+      var t = new Date(now.getFullYear(), now.getMonth(), 16, 13, 0, 0);
+      if (now.getDate() > 16 || (now.getDate() === 16 && now.getHours() >= 13)) { document.getElementById('dropCountdown').style.display = 'none'; return; }
       function update() {
-        var diff = Math.max(0, Math.floor((target - new Date()) / 1000));
+        var diff = Math.max(0, Math.floor((t - new Date()) / 1000));
         document.getElementById('cdDays').textContent = String(Math.floor(diff / 86400)).padStart(2,'0');
         document.getElementById('cdHours').textContent = String(Math.floor((diff % 86400) / 3600)).padStart(2,'0');
         document.getElementById('cdMins').textContent = String(Math.floor((diff % 3600) / 60)).padStart(2,'0');
@@ -44,7 +44,6 @@ function render_home(array $featured, array $newDrops, array $collections, array
       setInterval(update, 1000);
     })();
     </script>
-    <?php endif; ?>
     <section class="section-title">
       <p class="eyebrow">Featured</p>
       <h2>Featured Collection</h2>
@@ -423,17 +422,19 @@ function render_new_drops(array $products): string
     </div>
     <script>
     (function(){
-      var target = new Date(<?= date('Y', $earliestRelease) ?>, <?= date('m', $earliestRelease)-1 ?>, <?= date('d', $earliestRelease) ?>, <?= date('H', $earliestRelease) ?>, <?= date('i', $earliestRelease) ?>, 0);
-      function update() {
-        var diff = Math.max(0, Math.floor((target - new Date()) / 1000));
+      var now2 = new Date();
+      var t2 = new Date(now2.getFullYear(), now2.getMonth(), 16, 13, 0, 0);
+      if (now2.getDate() > 16 || (now2.getDate() === 16 && now2.getHours() >= 13)) { var el2 = document.getElementById('cdCountdown2'); if (el2) el2.style.display = 'none'; return; }
+      function update2() {
+        var diff = Math.max(0, Math.floor((t2 - new Date()) / 1000));
         document.getElementById('cd2Days').textContent = String(Math.floor(diff / 86400)).padStart(2,'0');
         document.getElementById('cd2Hours').textContent = String(Math.floor((diff % 86400) / 3600)).padStart(2,'0');
         document.getElementById('cd2Mins').textContent = String(Math.floor((diff % 3600) / 60)).padStart(2,'0');
         document.getElementById('cd2Secs').textContent = String(diff % 60).padStart(2,'0');
-        if (diff <= 0) document.getElementById('cdCountdown2').style.display = 'none';
+        if (diff <= 0) { var el2 = document.getElementById('cdCountdown2'); if (el2) el2.style.display = 'none'; }
       }
-      update();
-      setInterval(update, 1000);
+      update2();
+      setInterval(update2, 1000);
     })();
     </script>
     <?php endif; ?>
