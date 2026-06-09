@@ -2318,6 +2318,22 @@ function admin_memberships(): void
     </div>
 
     <div class="panel">
+      <h3>Membership Plans</h3>
+      <table class="table" style="font-size:13px">
+        <tr><th>Name</th><th>Price</th><th>Description</th><th>Benefits</th><th>Status</th></tr>
+        <?php foreach ($plans as $plan): $benefits = json_decode($plan['benefits'] ?? '[]', true); ?>
+          <tr>
+            <td><strong><?= e($plan['name']) ?></strong></td>
+            <td>$<?= e(number_format((float)$plan['price'], 2)) ?>/mo</td>
+            <td style="font-size:11px;color:var(--muted)"><?= e(substr($plan['description'] ?? '', 0, 60)) ?></td>
+            <td style="font-size:11px"><?= e(implode(', ', array_slice($benefits, 0, 3))) ?></td>
+            <td><span class="badge" style="background:<?= $plan['is_active'] ? 'var(--green)' : 'var(--red)' ?>"><?= $plan['is_active'] ? 'Active' : 'Inactive' ?></span></td>
+          </tr>
+        <?php endforeach; ?>
+      </table>
+    </div>
+
+    <div class="panel">
       <h3>Active Members</h3>
       <table class="table">
         <tr><th>Name</th><th>Email</th><th>Plan</th><th>Status</th><th>Auto-Pay</th><th>Joined</th><th>Invoice</th></tr>
