@@ -87,19 +87,14 @@ function render_admin_dashboard(
           <span id="navToggleIcon" style="font-size:14px;color:var(--text2)">◀</span>
         </div>
         <nav class="admin-nav" id="adminNav">
-          <?php foreach ($navGroups as $gk => $g): ?>
-            <div class="nav-group-header" onclick="toggleGroup('<?= $gk ?>')">
-              <span><?= $g['label'] ?></span>
-              <span class="nav-group-arrow" id="arr_<?= $gk ?>">▼</span>
-            </div>
-            <div class="nav-group-items" id="grp_<?= $gk ?>">
-              <?php foreach ($g['items'] as $item):
-                $superOnly = in_array($item['tab'], ['inbox','memberships','todos','security'], true);
-                if ($superOnly && !$isSuperAdmin) continue;
-              ?>
-                <a href="/?page=admin&tab=<?= $item['tab'] ?>" class="<?= $effectiveTab === $item['tab'] ? 'active' : '' ?>"><?= $item['label'] ?></a>
-              <?php endforeach; ?>
-            </div>
+          <?php $origOrder = ['dashboard','products','categories','comingsoon','orders','customers','coupons','pos','payments','shipping','inventory','reorder','sizecharts','employees','memberships','signins','audit','inbox','newsletter','contact','pages','blog','events','todos','bugreports','settings','security']; ?>
+          <?php foreach ($origOrder as $tabKey):
+            $superOnly = in_array($tabKey, ['inbox','memberships','todos','security'], true);
+            if ($superOnly && !$isSuperAdmin) continue;
+            $label = $tabKey;
+            foreach ($navGroups as $g) foreach ($g['items'] as $item) { if ($item['tab'] === $tabKey) { $label = $item['label']; break 2; } }
+          ?>
+            <a href="/?page=admin&tab=<?= $tabKey ?>" class="<?= $effectiveTab === $tabKey ? 'active' : '' ?>"><?= $label ?></a>
           <?php endforeach; ?>
         </nav>
       </div>
@@ -109,17 +104,6 @@ function render_admin_dashboard(
         var icon = document.getElementById('navToggleIcon');
         if (nav.style.display === 'none') { nav.style.display = 'flex'; icon.textContent = '◀'; }
         else { nav.style.display = 'none'; icon.textContent = '▶'; }
-      }
-      function toggleGroup(g) {
-        var items = document.getElementById('grp_' + g);
-        var arr = document.getElementById('arr_' + g);
-        if (items.style.display === 'none') {
-          items.style.display = 'block';
-          arr.style.transform = 'rotate(0deg)';
-        } else {
-          items.style.display = 'none';
-          arr.style.transform = 'rotate(-90deg)';
-        }
       }
       </script>
 
