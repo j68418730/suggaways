@@ -658,6 +658,25 @@ function imap_fetch_msg(string $host, int $port, string $user, string $pass, str
     return ['resp' => $resp];
 }
 
+function imap_delete_msg(string $host, int $port, string $user, string $pass, string $mailbox, int $msgSeq): bool
+{
+    $prefix = ($port == 993) ? 'ssl://' : '';
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+    $fp = @stream_socket_client($prefix . $host . ':' . $port, $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) return false;
+    stream_set_timeout($fp, 10);
+    fread($fp, 8192);
+    $tag = 1;
+    $c = function($cmd) use ($fp, &$tag) { fwrite($fp, "A$tag $cmd\r\n"); fflush($fp); $tag++; };
+    $r = function() use ($fp) { $o = ''; while ($ch = @fread($fp, 65536)) { $o .= $ch; if (preg_match('/^A\d+ (OK|NO|BAD|BYE)/m', $o)) break; } return $o; };
+    $c("LOGIN $user $pass"); $r();
+    $c("SELECT \"$mailbox\""); $r();
+    $c("STORE $msgSeq +FLAGS (\Deleted)"); $r();
+    $c("EXPUNGE"); $r();
+    fclose($fp);
+    return true;
+}
+
 function extract_email_body(string $imapResponse): string
 {
     // Try BODY[1] content
