@@ -1179,35 +1179,47 @@ function admin_contact(): void
     <div class="panel">
       <h2>Contact Submissions</h2>
       <table class="table">
-        <tr><th>Date</th><th>Name</th><th>Email</th><th>Subject</th><th>Message</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>Date</th><th>Name</th><th>Email</th><th>Subject</th><th>Message</th><th>Status</th><th></th></tr>
         <?php foreach ($submissions as $s): ?>
           <tr style="<?= $s['is_read'] ? '' : 'font-weight:700' ?>">
-            <td><?= e(date('M j, Y g:i A', strtotime($s['created_at']))) ?></td>
+            <td style="white-space:nowrap"><?= e(date('M j, Y g:i A', strtotime($s['created_at']))) ?></td>
             <td><?= e($s['name']) ?></td>
             <td><a href="mailto:<?= e($s['email']) ?>"><?= e($s['email']) ?></a></td>
             <td><?= e($s['subject'] ?? '—') ?></td>
-            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis"><?= e(substr($s['message'], 0, 80)) ?></td>
+            <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e(substr($s['message'], 0, 60)) ?></td>
             <td><?= $s['is_read'] ? 'Read' : 'New' ?></td>
-            <td>
+            <td style="white-space:nowrap">
+              <button class="button" type="button" style="padding:2px 6px;min-height:auto;font-size:10px" onclick="viewContact(<?= (int)$s['id'] ?>, '<?= e(addslashes($s['name'])) ?>', '<?= e(addslashes($s['email'])) ?>', '<?= e(addslashes($s['subject'] ?? '')) ?>', '<?= e(addslashes($s['message'])) ?>')">View</button>
               <?php if (!$s['is_read']): ?>
-                <form method="post" style="display:inline">
-                  <?= csrf_field() ?>
-                  <input type="hidden" name="action" value="admin_mark_contact_read">
-                  <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
-                  <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px">Mark Read</button>
-                </form>
+                <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_mark_contact_read"><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px">Read</button></form>
               <?php endif; ?>
-              <form method="post" style="display:inline">
-                <?= csrf_field() ?>
-                <input type="hidden" name="action" value="admin_delete_contact">
-                <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
-                <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete submission?')">Del</button>
-              </form>
+              <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_contact"><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete?')">Del</button></form>
             </td>
           </tr>
         <?php endforeach; ?>
       </table>
     </div>
+    <div id="contactModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;padding:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2 id="contactSubject" style="font-size:16px;margin:0"></h2>
+          <button style="background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer" onclick="document.getElementById('contactModal').style.display='none'">✕</button>
+        </div>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>From:</strong> <span id="contactName"></span> (<span id="contactEmail"></span>)</p>
+        <div id="contactBody" style="padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:4px;margin-top:12px;font-size:13px;line-height:1.6;white-space:pre-wrap"></div>
+      </div>
+    </div>
+    <script>
+    function viewContact(id, name, email, subject, message) {
+      document.getElementById('contactSubject').textContent = subject || '(No Subject)';
+      document.getElementById('contactName').textContent = name;
+      document.getElementById('contactEmail').textContent = email;
+      document.getElementById('contactBody').textContent = message;
+      document.getElementById('contactModal').style.display = 'flex';
+      // Auto-mark as read
+      fetch('/?page=admin&tab=contact&action=admin_mark_contact_read&id=' + id);
+    }
+    </script>
     <?php
 }
 
