@@ -82,9 +82,9 @@ function render_admin_dashboard(
     <?php endif; ?>
     <div class="admin-layout">
       <div class="admin-sidebar panel">
-        <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleNav()">
-          <div><h3 style="display:inline;font-size:14px">Webmaster v2</h3><p class="hint" style="font-size:10px"><?= e($user['full_name'] ?: $user['username']) ?></p></div>
-          <span id="navToggleIcon" style="font-size:14px;color:var(--text2)">◀</span>
+        <div>
+          <h3 style="font-size:14px">Webmaster v2</h3>
+          <p class="hint" style="font-size:10px"><?= e($user['full_name'] ?: $user['username']) ?></p>
         </div>
         <nav class="admin-nav" id="adminNav">
           <?php $origOrder = ['dashboard','products','categories','comingsoon','orders','customers','coupons','pos','payments','shipping','inventory','reorder','sizecharts','employees','memberships','signins','audit','inbox','newsletter','contact','pages','blog','events','todos','bugreports','settings','security']; ?>
@@ -98,14 +98,7 @@ function render_admin_dashboard(
           <?php endforeach; ?>
         </nav>
       </div>
-      <script>
-      function toggleNav() {
-        var nav = document.getElementById('adminNav');
-        var icon = document.getElementById('navToggleIcon');
-        if (nav.style.display === 'none') { nav.style.display = 'flex'; icon.textContent = '◀'; }
-        else { nav.style.display = 'none'; icon.textContent = '▶'; }
-      }
-      </script>
+
 
       <div class="admin-content">
         <?php
