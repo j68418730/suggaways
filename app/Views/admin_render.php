@@ -2689,10 +2689,10 @@ function admin_inbox(): void
             <?php else: ?>
               <table class="table email-list" style="font-size:13px">
                 <tr style="font-size:11px;color:var(--text2)"><th style="width:40%">From</th><th>Subject</th><th style="width:120px">Date</th></tr>
-                <?php foreach (array_reverse($messages) as $msg): $mid = $msg['uid'] ?? 0; ?>
-                  <tr class="<?= $msg['uid'] === $viewMsg ? 'selected' : '' ?>">
+                <?php foreach (array_reverse($messages) as $msg): $mid = $msg['uid'] ?? 0; $msgUrl = '/?page=admin&tab=inbox&subtab=inbox&mailbox=' . e($activeMailbox) . '&folder=' . e($folder) . '&msg=' . $mid; ?>
+                  <tr class="<?= $msg['uid'] === $viewMsg ? 'selected' : '' ?>" onclick="window.location='<?= $msgUrl ?>'" style="cursor:pointer">
                     <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($msg['from'] ?? '—') ?></td>
-                    <td><a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($activeMailbox) ?>&folder=<?= e($folder) ?>&msg=<?= $mid ?>" style="color:var(--text);text-decoration:none;display:block"><?= e($msg['subject'] ?? '(no subject)') ?></a></td>
+                    <td><a href="<?= $msgUrl ?>" style="color:var(--text);text-decoration:none;display:block"><?= e($msg['subject'] ?? '(no subject)') ?></a></td>
                     <td style="white-space:nowrap;font-size:11px;color:var(--text2)"><?= e($msg['date'] ?? '') ?></td>
                   </tr>
                 <?php endforeach; ?>
