@@ -660,31 +660,27 @@ function imap_fetch_msg(string $host, int $port, string $user, string $pass, str
 
 function extract_email_body(string $imapResponse): string
 {
-    // Try BODY[1] first (first part of multipart = usually text/plain)
-    $body = '';
-    if (preg_match('/BODY\[1\]\s*\{(\d+)\}\s*\r?\n(.*?)(?=\r?\nA\d+\s|$)/s', $imapResponse, $m)) {
+    // Try BODY[1] content
+    if (preg_match('/BODY\[1\]\s+\{(\d+)\}\s*\n(.*?)(?=\nA\d+\s|\n\))/s', $imapResponse, $m)) {
         $body = substr($m[2], 0, (int)$m[1]);
+        if (trim($body)) {
+            $body = quoted_printable_decode($body);
+            // Strip any remaining MIME headers
+            $body = preg_replace('/^Content-.*\n?/im', '', $body);
+            $body = preg_replace('/^\s*--.*\n?/m', '', $body);
+            return trim($body);
+        }
     }
-    // If BODY[1] has MIME headers, strip them
-    if ($body) {
-        $parts = preg_split('/\r?\n\r?\n/', $body, 2);
-        if (count($parts) > 1) $body = trim($parts[1]);
-        // Remove quoted-printable encoding if present
-        $body = quoted_printable_decode($body);
-        return $body;
-    }
-    // Fallback: try BODY[TEXT]
-    if (preg_match('/BODY\[TEXT\]\s*\{(\d+)\}\s*\r?\n(.*?)(?=\r?\nA\d+\s|$)/s', $imapResponse, $m)) {
+    // Fallback to BODY[TEXT]
+    if (preg_match('/BODY\[TEXT\]\s+\{(\d+)\}\s*\n(.*?)(?=\nA\d+\s|\n\))/s', $imapResponse, $m)) {
         $body = substr($m[2], 0, (int)$m[1]);
-        // Strip MIME boundaries
-        $body = preg_replace('/^--.*\r?\n?/m', '', $body);
-        $body = preg_replace('/Content-Type:.*\r?\n?/i', '', $body);
-        $body = preg_replace('/Content-Transfer-Encoding:.*\r?\n?/i', '', $body);
-        // Remove HTML if present
+        // Strip MIME boundaries and headers
+        $body = preg_replace('/^Content-.*\n?/im', '', $body);
+        $body = preg_replace('/^--.*\n?/m', '', $body);
         if (stripos($body, '<html') !== false || stripos($body, '<div') !== false) {
             $body = strip_tags($body);
         }
-        return trim($body);
+        return trim(quoted_printable_decode($body));
     }
     return '';
 }
