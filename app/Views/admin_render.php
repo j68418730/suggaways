@@ -96,7 +96,7 @@ function render_admin_dashboard(
                   if (!$visible && !$isAdmin) continue;
                   if ($superOnly && !$isSuperAdmin) continue;
                 ?>
-                  <a href="/?page=admin&tab=<?= $item['tab'] ?>" style="padding:3px 8px;font-size:12px" class="<?= $effectiveTab === $item['tab'] ? 'active' : '' ?>"><?= $item['label'] ?></a>
+                  <a href="/?page=admin&tab=<?= $item['tab'] ?>" class="<?= $effectiveTab === $item['tab'] ? 'active' : '' ?>"><?= $item['label'] ?></a>
                 <?php endforeach; ?>
               </div>
             </div>
