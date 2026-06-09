@@ -1261,22 +1261,53 @@ function admin_size_charts(): void
         </form>
       </details>
     </div>
-    <?php foreach ($charts as $chart): $data = json_decode($chart['data'], true) ?: []; ?>
+    <?php foreach ($charts as $chart): $data = json_decode($chart['data'], true) ?: []; $chartId = (int)$chart['id']; ?>
     <div class="panel">
       <h3 style="display:flex;justify-content:space-between;align-items:center">
         <span><?= e($chart['name']) ?></span>
-        <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_size_chart"><input type="hidden" name="id" value="<?= (int)$chart['id'] ?>"><button class="button" type="submit" style="padding:2px 6px;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete?')">Del</button></form>
+        <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_size_chart"><input type="hidden" name="id" value="<?= $chartId ?>"><button class="button" type="submit" style="padding:2px 6px;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete?')">Del</button></form>
       </h3>
+      <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="admin_update_size_chart"><input type="hidden" name="id" value="<?= $chartId ?>">
       <div style="overflow-x:auto">
       <table class="table" style="font-size:12px">
-        <tr><th>Size</th><th>Chest</th><th>Waist</th><th>Hips</th><th>Length</th></tr>
-        <?php foreach ($data as $row): ?>
-          <tr><td><strong><?= e($row['size'] ?? '') ?></strong></td><td><?= e($row['chest'] ?? '') ?></td><td><?= e($row['waist'] ?? '') ?></td><td><?= e($row['hips'] ?? '') ?></td><td><?= e($row['length'] ?? '') ?></td></tr>
+        <tr><th>Size</th><th>Chest</th><th>Waist</th><th>Hips</th><th>Length</th><th></th></tr>
+        <?php foreach ($data as $i => $row): ?>
+          <tr>
+            <td><input name="size[<?= $i ?>]" value="<?= e($row['size'] ?? '') ?>" style="width:50px;padding:2px 4px;font-size:11px"></td>
+            <td><input name="chest[<?= $i ?>]" value="<?= e($row['chest'] ?? '') ?>" style="width:60px;padding:2px 4px;font-size:11px"></td>
+            <td><input name="waist[<?= $i ?>]" value="<?= e($row['waist'] ?? '') ?>" style="width:60px;padding:2px 4px;font-size:11px"></td>
+            <td><input name="hips[<?= $i ?>]" value="<?= e($row['hips'] ?? '') ?>" style="width:60px;padding:2px 4px;font-size:11px"></td>
+            <td><input name="length[<?= $i ?>]" value="<?= e($row['length'] ?? '') ?>" style="width:60px;padding:2px 4px;font-size:11px"></td>
+            <td><button type="button" class="button" style="padding:2px 6px;font-size:10px" onclick="this.closest('tr').remove()">✕</button></td>
+          </tr>
         <?php endforeach; ?>
       </table>
       </div>
+      <div style="margin-top:8px;display:flex;gap:8px">
+        <button class="button primary" type="submit" style="padding:4px 12px;min-height:auto;font-size:11px">💾 Save Changes</button>
+        <button type="button" class="button" style="padding:4px 12px;min-height:auto;font-size:11px" onclick="addEditRow(this)">+ Add Row</button>
+      </div>
+      </form>
     </div>
     <?php endforeach; ?>
+    <script>
+    function addEditRow(btn) {
+      var t = btn.closest('.panel').querySelector('table');
+      var r = t.insertRow(t.rows.length);
+      var idx = t.rows.length - 2;
+      ['size','chest','waist','hips','length'].forEach(function(f) {
+        var c = r.insertCell();
+        var i = document.createElement('input');
+        i.name = f + '[' + idx + ']'; i.style.cssText = 'width:' + (f==='size'?50:60) + 'px;padding:2px 4px;font-size:11px';
+        c.appendChild(i);
+      });
+      var c = r.insertCell();
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'button'; b.style.cssText = 'padding:2px 6px;font-size:10px';
+      b.textContent = '✕'; b.onclick = function(){ r.remove(); };
+      c.appendChild(b);
+    }
+    </script>
     <script>
     function addRow() {
       var t = document.getElementById('sizeTable');
