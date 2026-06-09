@@ -101,19 +101,6 @@ function render_admin_dashboard(
               </div>
             </div>
           <?php endforeach; ?>
-          <?php if ($isSuperAdmin && !empty($todos)): ?>
-            <hr style="border-color:var(--line-soft);margin:8px 0">
-            <div style="padding:4px 8px;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase">✅ Todo</div>
-            <?php foreach (array_slice($todos, 0, 5) as $t): ?>
-              <div style="display:flex;align-items:center;gap:4px;padding:2px 8px;font-size:11px;<?= $t['is_completed'] ? 'opacity:0.5;text-decoration:line-through' : '' ?>">
-                <span style="font-size:10px"><?= $t['is_completed'] ? '✅' : '⬜' ?></span>
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($t['title']) ?></span>
-              </div>
-            <?php endforeach; ?>
-            <?php if (count($todos) > 5): ?>
-              <a href="/?page=admin&tab=todos" style="display:block;padding:2px 8px;font-size:10px;color:var(--cyan)">+<?= count($todos)-5 ?> more →</a>
-            <?php endif; ?>
-          <?php endif; ?>
         </nav>
       </div>
       <script>
@@ -166,6 +153,24 @@ function render_admin_dashboard(
         ?>
       </div>
     </div>
+    <?php if ($isSuperAdmin && !empty($todos)): ?>
+    <div class="panel" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 style="font-size:14px;margin:0">✅ Todo</h3>
+        <a href="/?page=admin&tab=todos" class="button" style="padding:4px 10px;min-height:auto;font-size:11px">Manage</a>
+      </div>
+      <table class="table" style="font-size:12px">
+        <tr><th style="width:30px"></th><th>Task</th><th style="width:80px">Status</th></tr>
+        <?php foreach (array_slice($todos, 0, 10) as $t): ?>
+          <tr style="<?= $t['is_completed'] ? 'opacity:0.5' : '' ?>">
+            <td style="text-align:center;font-size:14px"><?= $t['is_completed'] ? '✅' : '⬜' ?></td>
+            <td style="<?= $t['is_completed'] ? 'text-decoration:line-through' : '' ?>"><?= e($t['title']) ?></td>
+            <td><span class="badge" style="background:<?= $t['is_active'] ? 'var(--green)' : 'var(--orange)' ?>;font-size:10px"><?= $t['is_active'] ? 'Active' : 'Off' ?></span></td>
+          </tr>
+        <?php endforeach; ?>
+      </table>
+    </div>
+    <?php endif; ?>
     <?php
     return ob_get_clean();
 }
