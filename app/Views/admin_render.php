@@ -115,7 +115,7 @@ function render_admin_dashboard(
             $isActive = isset($menu['children'][$effectiveTab]);
           ?>
             <li class="<?= $hasChildren ? 'sub-menu' : '' ?> <?= $isActive ? 'active' : '' ?>">
-              <a href="<?= $hasChildren ? 'javascript:void(0)' : '/?page=admin&tab=' . key($menu['children']) ?>">
+              <a href="<?= $hasChildren ? 'javascript:void(0)' : '/?page=admin&tab=' . key($menu['children']) ?>" <?= $hasChildren ? 'onclick="toggleSub(this)"' : '' ?>>
                 <span class="menu-icon"><?= $icon ?></span>
                 <span class="menu-text"><?= $menu['label'] ?></span>
                 <?php if ($hasChildren): ?><i class="arrow">▶</i><?php endif; ?>
@@ -2689,22 +2689,23 @@ function admin_security(): void
       <?php endif; ?>
     </div>
     <script>
-    document.addEventListener('click', function(e) {
-      var a = e.target.closest('#adminNav li.sub-menu > a');
-      if (!a) return;
-      e.preventDefault();
-      var li = a.parentNode;
+    function toggleSub(el) {
+      var li = el.parentNode;
       var ul = li.querySelector('ul');
       var arrow = li.querySelector('.arrow');
-      if (ul && ul.style.display === 'block') {
-        ul.style.display = 'none';
-        if (arrow) arrow.style.transform = 'rotate(0deg)';
-      } else if (ul) {
-        document.querySelectorAll('#adminNav li.sub-menu ul').forEach(function(u) { u.style.display = 'none'; });
-        document.querySelectorAll('#adminNav li.sub-menu .arrow').forEach(function(a2) { a2.style.transform = 'rotate(0deg)'; });
-        ul.style.display = 'block';
-        if (arrow) arrow.style.transform = 'rotate(90deg)';
+      if (ul) {
+        if (ul.style.display === 'block') {
+          ul.style.display = 'none';
+          if (arrow) arrow.style.transform = 'rotate(0deg)';
+        } else {
+          document.querySelectorAll('#adminNav li.sub-menu ul').forEach(function(u) { u.style.display = 'none'; });
+          document.querySelectorAll('#adminNav li.sub-menu .arrow').forEach(function(a) { a.style.transform = 'rotate(0deg)'; });
+          ul.style.display = 'block';
+          if (arrow) arrow.style.transform = 'rotate(90deg)';
+        }
       }
+      return false;
+    }
     });
     </script>
     <div class="panel">
