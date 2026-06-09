@@ -2,9 +2,23 @@
 
 function render_home(array $featured, array $newDrops, array $collections, array $comingSoon = []): string
 {
+    // Get earliest coming soon date
+    $earliestRelease = null;
+    $earliestName = '';
+    if (!empty($comingSoon)) {
+        $dates = array_filter(array_column($comingSoon, 'release_date'));
+        if (!empty($dates)) {
+            $minDate = min($dates);
+            $earliestRelease = strtotime($minDate);
+            foreach ($comingSoon as $cs) {
+                if ($cs['release_date'] === $minDate) { $earliestName = $cs['name']; break; }
+            }
+        }
+    }
     ob_start(); ?>
+    <?php if ($earliestRelease): ?>
     <div id="dropCountdown" style="text-align:center;padding:16px;margin-bottom:20px;background:rgba(0,200,255,0.05);border:1px solid rgba(0,200,255,0.15);border-radius:8px;font-family:var(--mono)">
-      <p style="font-size:12px;color:var(--cyan);margin-bottom:6px">🚀 SITE GOES LIVE IN</p>
+      <p style="font-size:12px;color:var(--cyan);margin-bottom:6px">🚀 NEXT DROP: <strong><?= e(strtoupper($earliestName)) ?></strong></p>
       <div style="display:flex;justify-content:center;gap:16px;font-size:28px;font-weight:800;color:var(--text)">
         <span><span id="cdDays">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">DAYS</span></span>
         <span style="color:var(--cyan)">:</span>
@@ -17,25 +31,20 @@ function render_home(array $featured, array $newDrops, array $collections, array
     </div>
     <script>
     (function(){
-      var now = new Date();
-      var target = new Date(now.getFullYear(), now.getMonth(), 16, 13, 0, 0);
-      if (now.getDate() > 16 || (now.getDate() === 16 && now.getHours() >= 13)) {
-        document.getElementById('dropCountdown').style.display = 'none';
-        return;
-      }
+      var target = new Date(<?= date('Y', $earliestRelease) ?>, <?= date('m', $earliestRelease)-1 ?>, <?= date('d', $earliestRelease) ?>, <?= date('H', $earliestRelease) ?>, <?= date('i', $earliestRelease) ?>, 0);
       function update() {
         var diff = Math.max(0, Math.floor((target - new Date()) / 1000));
-        var d = Math.floor(diff / 86400), h = Math.floor((diff % 86400) / 3600), m = Math.floor((diff % 3600) / 60), s = diff % 60;
-        document.getElementById('cdDays').textContent = String(d).padStart(2,'0');
-        document.getElementById('cdHours').textContent = String(h).padStart(2,'0');
-        document.getElementById('cdMins').textContent = String(m).padStart(2,'0');
-        document.getElementById('cdSecs').textContent = String(s).padStart(2,'0');
+        document.getElementById('cdDays').textContent = String(Math.floor(diff / 86400)).padStart(2,'0');
+        document.getElementById('cdHours').textContent = String(Math.floor((diff % 86400) / 3600)).padStart(2,'0');
+        document.getElementById('cdMins').textContent = String(Math.floor((diff % 3600) / 60)).padStart(2,'0');
+        document.getElementById('cdSecs').textContent = String(diff % 60).padStart(2,'0');
         if (diff <= 0) document.getElementById('dropCountdown').style.display = 'none';
       }
       update();
       setInterval(update, 1000);
     })();
     </script>
+    <?php endif; ?>
     <section class="section-title">
       <p class="eyebrow">Featured</p>
       <h2>Featured Collection</h2>
@@ -389,40 +398,45 @@ function render_collections(array $collections): string
 
 function render_new_drops(array $products): string
 {
+    // Get earliest coming soon date
+    $earliestRelease = null;
+    $earliestName = '';
+    $csItems = db()->query("SELECT name, release_date FROM coming_soon WHERE release_date IS NOT NULL AND release_date > NOW() ORDER BY release_date ASC LIMIT 1")->fetchAll();
+    if (!empty($csItems)) {
+        $cs = $csItems[0];
+        $earliestRelease = strtotime($cs['release_date']);
+        $earliestName = $cs['name'];
+    }
     ob_start(); ?>
-    <div id="cdCountdown" style="text-align:center;padding:16px;margin-bottom:20px;background:rgba(0,200,255,0.05);border:1px solid rgba(0,200,255,0.15);border-radius:8px;font-family:var(--mono)">
-      <p style="font-size:12px;color:var(--cyan);margin-bottom:6px">🚀 SITE GOES LIVE IN</p>
+    <?php if ($earliestRelease): ?>
+    <div id="cdCountdown2" style="text-align:center;padding:16px;margin-bottom:20px;background:rgba(0,200,255,0.05);border:1px solid rgba(0,200,255,0.15);border-radius:8px;font-family:var(--mono)">
+      <p style="font-size:12px;color:var(--cyan);margin-bottom:6px">🚀 NEXT DROP: <strong><?= e(strtoupper($earliestName)) ?></strong></p>
       <div style="display:flex;justify-content:center;gap:16px;font-size:28px;font-weight:800;color:var(--text)">
-        <span><span id="cdDays">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">DAYS</span></span>
+        <span><span id="cd2Days">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">DAYS</span></span>
         <span style="color:var(--cyan)">:</span>
-        <span><span id="cdHours">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">HOURS</span></span>
+        <span><span id="cd2Hours">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">HOURS</span></span>
         <span style="color:var(--cyan)">:</span>
-        <span><span id="cdMins">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">MINS</span></span>
+        <span><span id="cd2Mins">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">MINS</span></span>
         <span style="color:var(--cyan)">:</span>
-        <span><span id="cdSecs">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">SECS</span></span>
+        <span><span id="cd2Secs">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">SECS</span></span>
       </div>
     </div>
     <script>
     (function(){
-      var now = new Date();
-      var target = new Date(now.getFullYear(), now.getMonth(), 16, 13, 0, 0);
-      if (now.getDate() > 16 || (now.getDate() === 16 && now.getHours() >= 13)) {
-        var el = document.getElementById('cdCountdown');
-        if (el) el.style.display = 'none';
-        return;
-      }
+      var target = new Date(<?= date('Y', $earliestRelease) ?>, <?= date('m', $earliestRelease)-1 ?>, <?= date('d', $earliestRelease) ?>, <?= date('H', $earliestRelease) ?>, <?= date('i', $earliestRelease) ?>, 0);
       function update() {
         var diff = Math.max(0, Math.floor((target - new Date()) / 1000));
-        document.getElementById('cdDays').textContent = String(Math.floor(diff / 86400)).padStart(2,'0');
-        document.getElementById('cdHours').textContent = String(Math.floor((diff % 86400) / 3600)).padStart(2,'0');
-        document.getElementById('cdMins').textContent = String(Math.floor((diff % 3600) / 60)).padStart(2,'0');
-        document.getElementById('cdSecs').textContent = String(diff % 60).padStart(2,'0');
-        if (diff <= 0) document.getElementById('cdCountdown').style.display = 'none';
+        document.getElementById('cd2Days').textContent = String(Math.floor(diff / 86400)).padStart(2,'0');
+        document.getElementById('cd2Hours').textContent = String(Math.floor((diff % 86400) / 3600)).padStart(2,'0');
+        document.getElementById('cd2Mins').textContent = String(Math.floor((diff % 3600) / 60)).padStart(2,'0');
+        document.getElementById('cd2Secs').textContent = String(diff % 60).padStart(2,'0');
+        if (diff <= 0) document.getElementById('cdCountdown2').style.display = 'none';
       }
       update();
       setInterval(update, 1000);
     })();
     </script>
+    <?php endif; ?>
     <section class="product-grid">
       <?php foreach ($products as $product): ?>
         <article class="product-card new-badge">
