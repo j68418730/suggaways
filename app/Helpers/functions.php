@@ -673,6 +673,7 @@ function imap_delete_msg(string $host, int $port, string $user, string $pass, st
     $c("SELECT \"$mailbox\""); $r();
     $c("STORE $msgSeq +FLAGS (\Deleted)"); $r();
     $c("EXPUNGE"); $r();
+    usleep(200000); // 200ms delay for server to process
     fclose($fp);
     return true;
 }
