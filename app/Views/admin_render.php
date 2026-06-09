@@ -2706,7 +2706,6 @@ function admin_security(): void
       }
       return false;
     }
-    });
     </script>
     <div class="panel">
       <h3>Quick Fixes</h3>
