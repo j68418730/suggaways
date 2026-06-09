@@ -69,13 +69,11 @@ function render_admin_dashboard(
             <span>🔔</span> <?= $pendingCount ?> pending order<?= $pendingCount > 1 ? 's' : '' ?>
           </a>
         <?php endif; ?>
-        <?php foreach ($todos as $t): ?>
-          <?php if (!$t['is_active']) continue; ?>
-          <a href="/?page=admin&tab=todos" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:<?= $t['is_completed'] ? 'rgba(0,255,136,0.1)' : 'rgba(0,200,255,0.08)' ?>;border:1px solid <?= $t['is_completed'] ? 'rgba(0,255,136,0.3)' : 'rgba(0,200,255,0.2)' ?>;border-radius:4px;color:var(--text);text-decoration:none">
-            <span><?= $t['is_completed'] ? '✅' : '📋' ?></span>
-            <span style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($t['title']) ?></span>
+        <?php if (!empty($todos)): ?>
+          <a href="/?page=admin&tab=todos" style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:rgba(0,200,255,0.08);border:1px solid rgba(0,200,255,0.2);border-radius:4px;color:var(--text);text-decoration:none;font-size:12px">
+            <span>✅</span> <?= count($todos) ?> open tasks
           </a>
-        <?php endforeach; ?>
+        <?php endif; ?>
       </div>
     <?php endif; ?>
     <div class="admin-layout">
@@ -103,6 +101,19 @@ function render_admin_dashboard(
               </div>
             </div>
           <?php endforeach; ?>
+          <?php if ($isSuperAdmin && !empty($todos)): ?>
+            <hr style="border-color:var(--line-soft);margin:8px 0">
+            <div style="padding:4px 8px;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase">✅ Todo</div>
+            <?php foreach (array_slice($todos, 0, 5) as $t): ?>
+              <div style="display:flex;align-items:center;gap:4px;padding:2px 8px;font-size:11px;<?= $t['is_completed'] ? 'opacity:0.5;text-decoration:line-through' : '' ?>">
+                <span style="font-size:10px"><?= $t['is_completed'] ? '✅' : '⬜' ?></span>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($t['title']) ?></span>
+              </div>
+            <?php endforeach; ?>
+            <?php if (count($todos) > 5): ?>
+              <a href="/?page=admin&tab=todos" style="display:block;padding:2px 8px;font-size:10px;color:var(--cyan)">+<?= count($todos)-5 ?> more →</a>
+            <?php endif; ?>
+          <?php endif; ?>
         </nav>
       </div>
       <script>
