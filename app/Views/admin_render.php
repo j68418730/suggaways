@@ -2557,6 +2557,19 @@ function admin_inbox(): void
 
     $folderIcons = ['INBOX'=>'📥','Sent'=>'📤','Drafts'=>'📝','Trash'=>'🗑️','Junk'=>'⚠️'];
     $folderNames = ['INBOX'=>'Inbox','Sent'=>'Sent','Drafts'=>'Drafts','Trash'=>'Trash','Junk'=>'Spam'];
+    $folderCounts = [];
+    foreach ($mailboxes as $m) {
+        $pw = $creds[$m['username']] ?? '';
+        if ($pw) {
+            foreach (array_keys($folderNames) as $fk) {
+                $r = @imap_cmd($imapHost, $imapPort, $m['username'], $pw, "STATUS \"$fk\" (MESSAGES)");
+                if ($r && !isset($r['error'])) {
+                    preg_match('/\* STATUS.*MESSAGES\s+(\d+)/', $r['resp'] ?? '', $mc);
+                    $folderCounts[$m['username']][$fk] = (int)($mc[1] ?? 0);
+                }
+            }
+        }
+    }
     ?>
     <style>
     .email-sidebar a{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:13px;border-radius:6px;text-decoration:none;color:var(--text);transition:.1s}
@@ -2578,9 +2591,10 @@ function admin_inbox(): void
             <span style="font-size:10px;color:var(--text2)">▼</span>
           </div>
           <div id="<?= $mid ?>" style="<?= ($viewMailbox === $m['username']) ? '' : 'display:none' ?>">
-            <?php foreach ($folderNames as $fk => $fl): ?>
-              <a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($m['username']) ?>&folder=<?= $fk ?>" class="<?= ($viewMailbox === $m['username'] && $folder === $fk) ? 'active' : '' ?>">
-                <span><?= $folderIcons[$fk] ?? '📁' ?></span> <?= $fl ?>
+            <?php foreach ($folderNames as $fk => $fl): $cnt = $folderCounts[$m['username']][$fk] ?? 0; ?>
+              <a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($m['username']) ?>&folder=<?= $fk ?>" class="<?= ($viewMailbox === $m['username'] && $folder === $fk) ? 'active' : '' ?>" style="justify-content:space-between">
+                <span><span><?= $folderIcons[$fk] ?? '📁' ?></span> <?= $fl ?></span>
+                <?php if ($cnt > 0): ?><span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(0,200,255,0.15);color:var(--cyan)"><?= $cnt ?></span><?php endif; ?>
               </a>
             <?php endforeach; ?>
             <a href="/?page=admin&tab=inbox&subtab=compose&mailbox=<?= e($m['username']) ?>" style="display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px;color:var(--cyan);text-decoration:none"><span>✉️</span> Compose</a>
