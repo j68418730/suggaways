@@ -2329,8 +2329,8 @@ function admin_memberships(): void
               <input type="hidden" name="id" value="<?= (int)$plan['id'] ?>">
               <td><input name="name" value="<?= e($plan['name']) ?>" style="width:90px;padding:2px 4px;font-size:11px"></td>
               <td><input name="price" value="<?= e($plan['price']) ?>" type="number" step="0.01" style="width:60px;padding:2px 4px;font-size:11px"></td>
-              <td><input name="description" value="<?= e($plan['description'] ?? '') ?>" style="width:120px;padding:2px 4px;font-size:11px"></td>
-              <td><input name="benefits" value="<?= e(implode(', ', $benefits)) ?>" style="width:120px;padding:2px 4px;font-size:11px" placeholder="comma-separated"></td>
+              <td><textarea name="description" rows="3" style="width:180px;padding:4px;font-size:11px;font-family:var(--mono);word-wrap:break-word;white-space:pre-wrap"><?= e($plan['description'] ?? '') ?></textarea></td>
+              <td><textarea name="benefits" rows="3" style="width:200px;padding:4px;font-size:11px;font-family:var(--mono);word-wrap:break-word;white-space:pre-wrap" placeholder="one per line"><?= e(implode("\n", $benefits)) ?></textarea></td>
               <td>
                 <select name="is_active" style="padding:2px 4px;font-size:11px">
                   <option value="1" <?= $plan['is_active'] ? 'selected' : '' ?>>Active</option>
