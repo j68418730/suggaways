@@ -173,6 +173,25 @@ function render_admin_dashboard(
         ?>
       </div>
     </div>
+    <script>
+    function toggleSub(el) {
+      var li = el.parentNode;
+      var ul = li.querySelector('ul');
+      var arrow = li.querySelector('.arrow');
+      if (ul) {
+        if (ul.style.display === 'block') {
+          ul.style.display = 'none';
+          if (arrow) arrow.style.transform = 'rotate(0deg)';
+        } else {
+          document.querySelectorAll('#adminNav li.sub-menu ul').forEach(function(u) { u.style.display = 'none'; });
+          document.querySelectorAll('#adminNav li.sub-menu .arrow').forEach(function(a) { a.style.transform = 'rotate(0deg)'; });
+          ul.style.display = 'block';
+          if (arrow) arrow.style.transform = 'rotate(90deg)';
+        }
+      }
+      return false;
+    }
+    </script>
     <?php if ($isSuperAdmin && !empty($todos)): ?>
     <div class="panel" style="margin-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -2688,25 +2707,6 @@ function admin_security(): void
         <p class="hint" style="margin-top:8px" id="noBackupMsg">No backups yet.</p>
       <?php endif; ?>
     </div>
-    <script>
-    function toggleSub(el) {
-      var li = el.parentNode;
-      var ul = li.querySelector('ul');
-      var arrow = li.querySelector('.arrow');
-      if (ul) {
-        if (ul.style.display === 'block') {
-          ul.style.display = 'none';
-          if (arrow) arrow.style.transform = 'rotate(0deg)';
-        } else {
-          document.querySelectorAll('#adminNav li.sub-menu ul').forEach(function(u) { u.style.display = 'none'; });
-          document.querySelectorAll('#adminNav li.sub-menu .arrow').forEach(function(a) { a.style.transform = 'rotate(0deg)'; });
-          ul.style.display = 'block';
-          if (arrow) arrow.style.transform = 'rotate(90deg)';
-        }
-      }
-      return false;
-    }
-    </script>
     <div class="panel">
       <h3>Quick Fixes</h3>
       <form method="post" class="form" style="max-width:400px">
