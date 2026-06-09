@@ -18,8 +18,8 @@ function render_home(array $featured, array $newDrops, array $collections, array
     <script>
     (function(){
       var now = new Date();
-      var target = new Date(now.getFullYear(), now.getMonth(), 16, 1, 0, 0);
-      if (now.getDate() > 16 || (now.getDate() === 16 && now.getHours() >= 1)) {
+      var target = new Date(now.getFullYear(), now.getMonth(), 16, 13, 0, 0);
+      if (now.getDate() > 16 || (now.getDate() === 16 && now.getHours() >= 13)) {
         document.getElementById('dropCountdown').style.display = 'none';
         return;
       }
