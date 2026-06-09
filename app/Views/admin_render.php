@@ -31,6 +31,7 @@ function render_admin_dashboard(
         ['tab' => 'blog',      'label' => '✍️ Blog',      'admin' => false],
         ['tab' => 'events',    'label' => '📅 Events',    'admin' => false],
         ['tab' => 'contact',   'label' => '📧 Contact',   'admin' => true],
+        ['tab' => 'sizecharts','label' => '📏 Size Charts','admin' => true],
         ['tab' => 'shipping',  'label' => '🚚 Shipping',  'admin' => true],
         ['tab' => 'inbox',    'label' => '📨 Inbox',    'admin' => true, 'super' => true],
         ['tab' => 'newsletter','label' => '📧 Newsletter','admin' => true],
@@ -103,6 +104,7 @@ function render_admin_dashboard(
             'blog' => admin_blog(),
             'events' => admin_events(),
             'contact' => admin_contact(),
+            'sizecharts' => admin_size_charts(),
             'shipping' => admin_shipping(),
             'todos' => admin_todos($todos),
             'inbox' => admin_inbox($user),
@@ -1228,6 +1230,68 @@ function admin_contact(): void
       document.getElementById('contactBody').textContent = btn.dataset.message;
       document.getElementById('contactModal').style.display = 'flex';
       fetch('/?action=admin_mark_contact_read&id=' + btn.dataset.id);
+    }
+    </script>
+    <?php
+}
+
+function admin_size_charts(): void
+{
+    $charts = db()->query('SELECT * FROM size_charts ORDER BY name')->fetchAll();
+    $categories = db()->query('SELECT id, name FROM categories ORDER BY name')->fetchAll();
+    ?>
+    <div class="panel">
+      <h2>📏 Size Charts</h2>
+      <details><summary class="button primary" style="display:inline-block;cursor:pointer;margin-bottom:12px">+ New Size Chart</summary>
+        <form method="post" class="form" style="max-width:600px"><?= csrf_field() ?><input type="hidden" name="action" value="admin_save_size_chart">
+          <label>Chart Name<input name="name" required></label>
+          <label>Category (optional)<select name="category_id"><option value="">All Products</option><?php foreach ($categories as $c): ?><option value="<?= (int)$c['id'] ?>"><?= e($c['name']) ?></option><?php endforeach; ?></select></label>
+          <div style="overflow-x:auto">
+          <table class="table" style="font-size:12px" id="sizeTable">
+            <tr><th>Size</th><th>Chest</th><th>Waist</th><th>Hips</th><th>Length</th><th></th></tr>
+            <tr><td><input name="size[]" value="" style="width:50px;padding:2px 4px;font-size:11px"></td>
+              <td><input name="chest[]" value="" style="width:60px;padding:2px 4px;font-size:11px"></td>
+              <td><input name="waist[]" value="" style="width:60px;padding:2px 4px;font-size:11px"></td>
+              <td><input name="hips[]" value="" style="width:60px;padding:2px 4px;font-size:11px"></td>
+              <td><input name="length[]" value="" style="width:60px;padding:2px 4px;font-size:11px"></td>
+              <td><button type="button" class="button" style="padding:2px 6px;font-size:10px" onclick="addRow()">+</button></td></tr>
+          </table>
+          </div>
+          <button class="button primary" type="submit" style="margin-top:8px">Save Size Chart</button>
+        </form>
+      </details>
+    </div>
+    <?php foreach ($charts as $chart): $data = json_decode($chart['data'], true) ?: []; ?>
+    <div class="panel">
+      <h3 style="display:flex;justify-content:space-between;align-items:center">
+        <span><?= e($chart['name']) ?></span>
+        <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_size_chart"><input type="hidden" name="id" value="<?= (int)$chart['id'] ?>"><button class="button" type="submit" style="padding:2px 6px;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete?')">Del</button></form>
+      </h3>
+      <div style="overflow-x:auto">
+      <table class="table" style="font-size:12px">
+        <tr><th>Size</th><th>Chest</th><th>Waist</th><th>Hips</th><th>Length</th></tr>
+        <?php foreach ($data as $row): ?>
+          <tr><td><strong><?= e($row['size'] ?? '') ?></strong></td><td><?= e($row['chest'] ?? '') ?></td><td><?= e($row['waist'] ?? '') ?></td><td><?= e($row['hips'] ?? '') ?></td><td><?= e($row['length'] ?? '') ?></td></tr>
+        <?php endforeach; ?>
+      </table>
+      </div>
+    </div>
+    <?php endforeach; ?>
+    <script>
+    function addRow() {
+      var t = document.getElementById('sizeTable');
+      var r = t.insertRow(t.rows.length);
+      ['size','chest','waist','hips','length'].forEach(function(f) {
+        var c = r.insertCell();
+        var i = document.createElement('input');
+        i.name = f + '[]'; i.style.cssText = 'width:' + (f==='size'?50:60) + 'px;padding:2px 4px;font-size:11px';
+        c.appendChild(i);
+      });
+      var c = r.insertCell();
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'button'; b.style.cssText = 'padding:2px 6px;font-size:10px';
+      b.textContent = '✕'; b.onclick = function(){ r.remove(); };
+      c.appendChild(b);
     }
     </script>
     <?php

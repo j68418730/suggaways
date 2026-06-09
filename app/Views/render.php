@@ -1498,3 +1498,35 @@ function render_membership_page(array $plans, ?array $userMembership): string
     <?php
     return ob_get_clean();
 }
+
+function render_size_guide(?array $page, array $sizeCharts): string
+{
+    ob_start(); ?>
+    <section class="page-title">
+      <div class="container">
+        <h1>📏 Size Guide</h1>
+        <p class="hint">Find your perfect fit with our size charts.</p>
+      </div>
+    </section>
+    <section class="container" style="margin-top:24px">
+      <?php if (!empty($page)): ?>
+        <div class="panel" style="max-width:800px"><?= $page['content'] ?></div>
+      <?php endif; ?>
+      <?php foreach ($sizeCharts as $chart): $data = json_decode($chart['data'], true) ?: []; ?>
+        <div class="panel" style="margin-top:16px;overflow-x:auto">
+          <h3 style="margin-bottom:12px"><?= e($chart['name']) ?></h3>
+          <table class="table" style="font-size:13px;min-width:400px">
+            <tr><th>Size</th><th>Chest</th><th>Waist</th><th>Hips</th><th>Length</th></tr>
+            <?php foreach ($data as $row): ?>
+              <tr><td><strong><?= e($row['size'] ?? '') ?></strong></td><td><?= e($row['chest'] ?? '—') ?></td><td><?= e($row['waist'] ?? '—') ?></td><td><?= e($row['hips'] ?? '—') ?></td><td><?= e($row['length'] ?? '—') ?></td></tr>
+            <?php endforeach; ?>
+          </table>
+        </div>
+      <?php endforeach; ?>
+      <?php if (empty($sizeCharts)): ?>
+        <div class="panel" style="text-align:center"><p class="hint">No size charts available yet.</p></div>
+      <?php endif; ?>
+    </section>
+    <?php
+    return ob_get_clean();
+}
