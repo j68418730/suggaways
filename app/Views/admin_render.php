@@ -1174,8 +1174,15 @@ function admin_events(): void
 
 function admin_contact(): void
 {
-    $submissions = db()->query('SELECT * FROM contact_submissions ORDER BY created_at DESC')->fetchAll();
+    $filter = $_GET['filter'] ?? 'all';
+    $where = ($filter === 'spam') ? 'WHERE is_spam=1' : (($filter === 'clean') ? 'WHERE is_spam=0' : '');
+    $submissions = db()->query("SELECT * FROM contact_submissions $where ORDER BY created_at DESC")->fetchAll();
     ?>
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <a href="/?page=admin&tab=contact&filter=all" class="button" style="padding:4px 10px;min-height:auto;font-size:11px;<?= $filter === 'all' ? 'background:rgba(0,200,255,0.15)' : '' ?>">All</a>
+      <a href="/?page=admin&tab=contact&filter=clean" class="button" style="padding:4px 10px;min-height:auto;font-size:11px;<?= $filter === 'clean' ? 'background:rgba(0,200,255,0.15)' : '' ?>">Inbox</a>
+      <a href="/?page=admin&tab=contact&filter=spam" class="button" style="padding:4px 10px;min-height:auto;font-size:11px;<?= $filter === 'spam' ? 'background:rgba(0,200,255,0.15)' : '' ?>">Spam (<?= db()->query("SELECT COUNT(*) FROM contact_submissions WHERE is_spam=1")->fetchColumn() ?>)</a>
+    </div>
     <div class="panel">
       <h2>Contact Submissions</h2>
       <table class="table">
@@ -1186,13 +1193,17 @@ function admin_contact(): void
             <td><?= e($s['name']) ?></td>
             <td><a href="mailto:<?= e($s['email']) ?>"><?= e($s['email']) ?></a></td>
             <td><?= e($s['subject'] ?? '—') ?></td>
-            <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e(substr($s['message'], 0, 60)) ?></td>
-            <td><?= $s['is_read'] ? 'Read' : 'New' ?></td>
+            <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e(substr($s['message'], 0, 50)) ?></td>
+            <td style="font-size:11px"><?= $s['is_spam'] ? '🚫 Spam' : ($s['is_read'] ? 'Read' : 'New') ?></td>
             <td style="white-space:nowrap">
-              <button class="button" type="button" style="padding:2px 6px;min-height:auto;font-size:10px" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>" data-email="<?= e($s['email']) ?>" data-subject="<?= e($s['subject'] ?? '') ?>" data-message="<?= e($s['message']) ?>" onclick="viewContact(this)">View</button>
-              <?php if (!$s['is_read']): ?>
+              <button class="button" type="button" style="padding:2px 6px;min-height:auto;font-size:10px" onclick="viewContact(this)" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>" data-email="<?= e($s['email']) ?>" data-subject="<?= e($s['subject'] ?? '') ?>" data-message="<?= e($s['message']) ?>">View</button>
+              <?php if (!$s['is_read'] && !$s['is_spam']): ?>
                 <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_mark_contact_read"><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px">Read</button></form>
               <?php endif; ?>
+              <?php if (!$s['is_spam']): ?>
+                <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_mark_contact_spam"><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><input type="hidden" name="email" value="<?= e($s['email']) ?>"><input type="hidden" name="ip" value="<?= e($s['ip_address'] ?? '') ?>"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,170,51,0.5)">🚫 Spam</button></form>
+              <?php endif; ?>
+              <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_block_contact"><input type="hidden" name="email" value="<?= e($s['email']) ?>"><input type="hidden" name="ip" value="<?= e($s['ip_address'] ?? '') ?>"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Block this contact?')">Block</button></form>
               <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_contact"><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete?')">Del</button></form>
             </td>
           </tr>
