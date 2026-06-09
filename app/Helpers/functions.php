@@ -637,11 +637,11 @@ function imap_fetch_msg(string $host, int $port, string $user, string $pass, str
     $fp = @stream_socket_client($prefix . $host . ':' . $port, $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
     if (!$fp) return ['error' => "Connection failed: $errstr"];
     stream_set_timeout($fp, 30);
-    $buf = fread($fp, 8192);
+    fread($fp, 8192);
     $tag = 1;
     $resp = '';
     $c = function($cmd) use ($fp, &$tag) { fwrite($fp, "A$tag $cmd\r\n"); fflush($fp); $tag++; };
-    $r = function($tagMatch = null) use ($fp) {
+    $r = function() use ($fp) {
         $out = '';
         while ($chunk = @fread($fp, 65536)) {
             $out .= $chunk;
@@ -651,10 +651,42 @@ function imap_fetch_msg(string $host, int $port, string $user, string $pass, str
     };
     $c("LOGIN $user $pass"); $r();
     $c("SELECT \"$mailbox\""); $r();
-    $c("FETCH $msgUid (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] BODY.PEEK[TEXT])");
+    // Fetch the text/plain part if multipart, otherwise fetch body
+    $c("FETCH $msgUid (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] BODY.PEEK[1] BODY.PEEK[TEXT])");
     $resp = $r();
     fclose($fp);
     return ['resp' => $resp];
+}
+
+function extract_email_body(string $imapResponse): string
+{
+    // Try BODY[1] first (first part of multipart = usually text/plain)
+    $body = '';
+    if (preg_match('/BODY\[1\]\s*\{(\d+)\}\s*\r?\n(.*?)(?=\r?\nA\d+\s|$)/s', $imapResponse, $m)) {
+        $body = substr($m[2], 0, (int)$m[1]);
+    }
+    // If BODY[1] has MIME headers, strip them
+    if ($body) {
+        $parts = preg_split('/\r?\n\r?\n/', $body, 2);
+        if (count($parts) > 1) $body = trim($parts[1]);
+        // Remove quoted-printable encoding if present
+        $body = quoted_printable_decode($body);
+        return $body;
+    }
+    // Fallback: try BODY[TEXT]
+    if (preg_match('/BODY\[TEXT\]\s*\{(\d+)\}\s*\r?\n(.*?)(?=\r?\nA\d+\s|$)/s', $imapResponse, $m)) {
+        $body = substr($m[2], 0, (int)$m[1]);
+        // Strip MIME boundaries
+        $body = preg_replace('/^--.*\r?\n?/m', '', $body);
+        $body = preg_replace('/Content-Type:.*\r?\n?/i', '', $body);
+        $body = preg_replace('/Content-Transfer-Encoding:.*\r?\n?/i', '', $body);
+        // Remove HTML if present
+        if (stripos($body, '<html') !== false || stripos($body, '<div') !== false) {
+            $body = strip_tags($body);
+        }
+        return trim($body);
+    }
+    return '';
 }
 
 function imap_fetch_mail(string $host, int $port, string $user, string $pass, string $mailbox = 'INBOX', int $limit = 20): array
