@@ -1270,19 +1270,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'admin_delete_message':
             if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
             $mailbox = $_POST['mailbox'] ?? '';
-            $msgUid = (int)($_POST['msg_uid'] ?? 0);
-            if ($mailbox && $msgUid) {
+            $msgSeq = (int)($_POST['msg_uid'] ?? 0);
+            if ($mailbox && $msgSeq) {
                 $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
                 $pass = $creds[$mailbox] ?? '';
                 if ($pass) {
                     $host = site_setting('imap_host', 'localhost');
                     $port = (int)site_setting('imap_port', '143');
-                    imap_cmd($host, $port, $mailbox, $pass, "STORE $msgUid +FLAGS (\Deleted)");
-                    imap_cmd($host, $port, $mailbox, $pass, "EXPUNGE");
-                    session_flash('notice', "Message deleted.");
+                    $folder = $_POST['folder'] ?? 'INBOX';
+                    if (imap_delete_msg($host, $port, $mailbox, $pass, $folder, $msgSeq)) {
+                        session_flash('notice', "Message deleted.");
+                    } else {
+                        session_flash('error', "Failed to delete message.");
+                    }
                 }
             }
-            redirect('/?page=admin&tab=inbox&subtab=inbox&mailbox=' . urlencode($mailbox));
+            redirect('/?page=admin&tab=inbox&subtab=inbox&mailbox=' . urlencode($mailbox) . '&_=' . time());
 
         case 'admin_security_fix':
             if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }

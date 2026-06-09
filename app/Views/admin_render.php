@@ -2647,7 +2647,7 @@ function admin_inbox(array $user): void
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
               <a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($activeMailbox) ?>&folder=<?= e($folder) ?>" class="button" style="padding:6px 14px;min-height:auto;font-size:12px">← Back</a>
               <a href="/?page=admin&tab=inbox&subtab=compose&mailbox=<?= e($activeMailbox) ?>&to=<?= e(urlencode($replyTo)) ?>&subject=<?= e(urlencode($replySubject)) ?>" class="button" style="padding:6px 14px;min-height:auto;font-size:12px">↩ Reply</a>
-              <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_message"><input type="hidden" name="mailbox" value="<?= e($activeMailbox) ?>"><input type="hidden" name="msg_uid" value="<?= $viewMsg ?>"><button class="button" type="submit" style="padding:6px 14px;min-height:auto;font-size:12px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete?')">🗑 Delete</button></form>
+              <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_message"><input type="hidden" name="mailbox" value="<?= e($activeMailbox) ?>"><input type="hidden" name="folder" value="<?= e($folder) ?>"><input type="hidden" name="msg_uid" value="<?= $viewMsg ?>"><button class="button" type="submit" style="padding:6px 14px;min-height:auto;font-size:12px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete?')">🗑 Delete</button></form>
             </div>
             <div style="padding:16px;background:var(--surface2);border-radius:6px;margin-bottom:16px">
               <p style="font-size:12px;color:var(--text2)">From: <strong style="color:var(--text);word-break:break-all"><?= e($from) ?></strong></p>
@@ -2714,16 +2714,27 @@ function admin_inbox(array $user): void
             <?php elseif (empty($messages)): ?>
               <p style="padding:24px;color:var(--text2)">No messages in <?= $folderNames[$folder] ?? $folder ?>.</p>
             <?php else: ?>
+              <form method="post" id="bulkMsgForm" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border)">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="admin_bulk_delete_msgs">
+                <input type="hidden" name="mailbox" value="<?= e($activeMailbox) ?>">
+                <input type="hidden" name="folder" value="<?= e($folder) ?>">
+                <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="selectAllMsgs" onchange="document.querySelectorAll('.msg-select').forEach(function(c){c.checked=this.checked})"> Select All</label>
+                <button class="button" type="submit" style="padding:4px 10px;min-height:auto;font-size:11px" onclick="return confirm('Delete selected?')">🗑 Delete Selected</button>
+                <button class="button" type="submit" name="empty_all" value="1" style="padding:4px 10px;min-height:auto;font-size:11px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Empty entire <?= $folderNames[$folder] ?? $folder ?>?')">🗑 Empty <?= $folderNames[$folder] ?? $folder ?></button>
+              </form>
               <table class="table email-list" style="font-size:13px">
-                <tr style="font-size:11px;color:var(--text2)"><th style="width:40%">From</th><th>Subject</th><th style="width:120px">Date</th></tr>
+                <tr style="font-size:11px;color:var(--text2)"><th style="width:30px"></th><th style="width:38%">From</th><th>Subject</th><th style="width:120px">Date</th></tr>
                 <?php foreach (array_reverse($messages) as $msg): $mid = $msg['uid'] ?? 0; $msgUrl = '/?page=admin&tab=inbox&subtab=inbox&mailbox=' . e($activeMailbox) . '&folder=' . e($folder) . '&msg=' . $mid; ?>
-                  <tr class="<?= $msg['uid'] === $viewMsg ? 'selected' : '' ?>" onclick="window.location='<?= $msgUrl ?>'" style="cursor:pointer">
-                    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($msg['from'] ?? '—') ?></td>
-                    <td><a href="<?= $msgUrl ?>" style="color:var(--text);text-decoration:none;display:block"><?= e($msg['subject'] ?? '(no subject)') ?></a></td>
-                    <td style="white-space:nowrap;font-size:11px;color:var(--text2)"><?= e($msg['date'] ?? '') ?></td>
+                  <tr class="<?= $msg['uid'] === $viewMsg ? 'selected' : '' ?>" style="cursor:pointer">
+                    <td style="text-align:center"><input type="checkbox" class="msg-select" name="msg_ids[]" value="<?= $mid ?>" form="bulkMsgForm" onclick="event.stopPropagation()"></td>
+                    <td onclick="window.location='<?= $msgUrl ?>'" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($msg['from'] ?? '—') ?></td>
+                    <td onclick="window.location='<?= $msgUrl ?>'"><a href="<?= $msgUrl ?>" style="color:var(--text);text-decoration:none;display:block"><?= e($msg['subject'] ?? '(no subject)') ?></a></td>
+                    <td onclick="window.location='<?= $msgUrl ?>'" style="white-space:nowrap;font-size:11px;color:var(--text2)"><?= e($msg['date'] ?? '') ?></td>
                   </tr>
                 <?php endforeach; ?>
               </table>
+              <form method="post" id="bulkDelForm"><?= csrf_field() ?><input type="hidden" name="action" value="admin_bulk_delete_msgs"><input type="hidden" name="mailbox" value="<?= e($activeMailbox) ?>"><input type="hidden" name="folder" value="<?= e($folder) ?>"></form>
             <?php endif; ?>
           <?php endif; ?>
           </div>
