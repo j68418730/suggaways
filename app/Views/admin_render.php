@@ -10,39 +10,52 @@ function render_admin_dashboard(
 ): string {
     $isSuperAdmin = in_array($user['role'] ?? '', ['webmaster', 'super_admin']);
     $isAdmin = is_admin($user);
-    $navLinks = [
-        ['tab' => 'dashboard', 'label' => '📊 Dashboard', 'admin' => false],
-        ['tab' => 'products',  'label' => '📦 Products',  'admin' => false],
-        ['tab' => 'categories','label' => '🏷️ Categories','admin' => false],
-        ['tab' => 'comingsoon','label' => '⏳ Coming Soon','admin' => false],
-        ['tab' => 'orders',    'label' => '📋 Orders',    'admin' => false],
-        ['tab' => 'customers', 'label' => '👤 Customers', 'admin' => false],
-        ['tab' => 'employees', 'label' => '👥 Employees', 'admin' => true],
-        ['tab' => 'inventory', 'label' => '📦 Inventory', 'admin' => false],
-        ['tab' => 'reorder',   'label' => '🔄 Reorder',   'admin' => true],
-        ['tab' => 'payments',  'label' => '💳 Payments',  'admin' => true],
-        ['tab' => 'coupons',   'label' => '🎫 Coupons',   'admin' => false],
-        ['tab' => 'audit',     'label' => '📜 Audit Log', 'admin' => true],
-        ['tab' => 'signins',   'label' => '🔑 Sign-ins',  'admin' => true],
-        ['tab' => 'pos',       'label' => '🧾 POS Drawer','admin' => false],
-        ['tab' => 'divider',   'label' => '',              'admin' => false],
-        ['tab' => 'bugreports','label' => '🐛 Bug Reports','admin' => true],
-        ['tab' => 'pages',     'label' => '📄 Pages',     'admin' => true],
-        ['tab' => 'blog',      'label' => '✍️ Blog',      'admin' => false],
-        ['tab' => 'events',    'label' => '📅 Events',    'admin' => false],
-        ['tab' => 'contact',   'label' => '📧 Contact',   'admin' => true],
-        ['tab' => 'sizecharts','label' => '📏 Size Charts','admin' => true],
-        ['tab' => 'shipping',  'label' => '🚚 Shipping',  'admin' => true],
-        ['tab' => 'inbox',    'label' => '📨 Inbox',    'admin' => true, 'super' => true],
-        ['tab' => 'newsletter','label' => '📧 Newsletter','admin' => true],
-        ['tab' => 'memberships','label' => '👥 Members',  'admin' => true, 'super' => true],
-        ['tab' => 'todos',     'label' => '✅ Todo',      'admin' => true, 'super' => true],
-        ['tab' => 'divider2',  'label' => '',              'admin' => false],
-        ['tab' => 'settings',  'label' => '⚙️ Settings',  'admin' => true],
-        ['tab' => 'security',  'label' => '🔒 Security', 'admin' => true, 'super' => true],
+    $navGroups = [
+        'store' => ['label' => '📦 Store', 'items' => [
+            ['tab' => 'dashboard', 'label' => '📊 Dashboard'],
+            ['tab' => 'products',  'label' => '📦 Products'],
+            ['tab' => 'categories','label' => '🏷️ Categories'],
+            ['tab' => 'comingsoon','label' => '⏳ Coming Soon'],
+            ['tab' => 'inventory', 'label' => '📦 Inventory'],
+            ['tab' => 'reorder',   'label' => '🔄 Reorder'],
+        ]],
+        'orders' => ['label' => '🛒 Sales', 'items' => [
+            ['tab' => 'orders',    'label' => '📋 Orders'],
+            ['tab' => 'customers', 'label' => '👤 Customers'],
+            ['tab' => 'coupons',   'label' => '🎫 Coupons'],
+            ['tab' => 'pos',       'label' => '🧾 POS Drawer'],
+        ]],
+        'admin' => ['label' => '⚙️ Admin', 'items' => [
+            ['tab' => 'employees', 'label' => '👥 Employees'],
+            ['tab' => 'payments',  'label' => '💳 Payments'],
+            ['tab' => 'audit',     'label' => '📜 Audit Log'],
+            ['tab' => 'signins',   'label' => '🔑 Sign-ins'],
+        ]],
+        'content' => ['label' => '📝 Content', 'items' => [
+            ['tab' => 'bugreports','label' => '🐛 Bug Reports'],
+            ['tab' => 'pages',     'label' => '📄 Pages'],
+            ['tab' => 'blog',      'label' => '✍️ Blog'],
+            ['tab' => 'events',    'label' => '📅 Events'],
+            ['tab' => 'contact',   'label' => '📧 Contact'],
+        ]],
+        'tools' => ['label' => '🔧 Tools', 'items' => [
+            ['tab' => 'sizecharts','label' => '📏 Size Charts'],
+            ['tab' => 'shipping',  'label' => '🚚 Shipping'],
+            ['tab' => 'inbox',     'label' => '📨 Inbox'],
+            ['tab' => 'newsletter','label' => '📧 Newsletter'],
+            ['tab' => 'memberships','label'=> '👥 Members'],
+            ['tab' => 'todos',     'label' => '✅ Todo'],
+        ]],
+        'system' => ['label' => '🔐 System', 'items' => [
+            ['tab' => 'settings',  'label' => '⚙️ Settings'],
+            ['tab' => 'security',  'label' => '🔒 Security'],
+        ]],
     ];
-    $employeeViewable = array_values(array_filter(array_map(fn($l) => !$l['admin'] ? $l['tab'] : null, $navLinks)));
-    $effectiveTab = ($isAdmin || in_array($tab, $employeeViewable, true)) ? $tab : 'dashboard';
+    // Build flat list for employee viewable check
+    $allNavItems = [];
+    foreach ($navGroups as $g) foreach ($g['items'] as $item) $allNavItems[] = $item['tab'];
+    $employeeViewable = $allNavItems;
+    $effectiveTab = ($isAdmin || in_array($tab, $allNavItems, true)) ? $tab : 'dashboard';
     // Count pending orders
     $pendingCount = 0;
     try {
@@ -72,14 +85,23 @@ function render_admin_dashboard(
           <span id="navToggleIcon" style="font-size:14px;color:var(--text2)">◀</span>
         </div>
         <nav class="admin-nav" id="adminNav">
-          <?php foreach ($navLinks as $link): ?>
-            <?php if (!$isAdmin && $link['admin']) continue; ?>
-            <?php if (!empty($link['super']) && !$isSuperAdmin) continue; ?>
-            <?php if ($link['tab'] === 'divider' || $link['tab'] === 'divider2'): ?>
-              <hr style="border-color:var(--line-soft);margin:8px 0">
-            <?php else: ?>
-              <a href="/?page=admin&tab=<?= $link['tab'] ?>" class="<?= $effectiveTab === $link['tab'] ? 'active' : '' ?>"><?= $link['label'] ?></a>
-            <?php endif; ?>
+          <?php foreach ($navGroups as $gk => $g): ?>
+            <div style="margin-bottom:4px">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;cursor:pointer" onclick="toggleGroup('<?= $gk ?>')">
+                <span><?= $g['label'] ?></span>
+                <span id="grp_<?= $gk ?>" style="font-size:8px">▼</span>
+              </div>
+              <div id="grpItems_<?= $gk ?>">
+                <?php foreach ($g['items'] as $item):
+                  $visible = $isAdmin || !in_array($item['tab'], ['employees','reorder','payments','audit','signins','bugreports','pages','contact','sizecharts','shipping','newsletter'], true);
+                  $superOnly = in_array($item['tab'], ['inbox','memberships','todos','security'], true);
+                  if (!$visible && !$isAdmin) continue;
+                  if ($superOnly && !$isSuperAdmin) continue;
+                ?>
+                  <a href="/?page=admin&tab=<?= $item['tab'] ?>" style="padding:3px 8px;font-size:12px" class="<?= $effectiveTab === $item['tab'] ? 'active' : '' ?>"><?= $item['label'] ?></a>
+                <?php endforeach; ?>
+              </div>
+            </div>
           <?php endforeach; ?>
         </nav>
       </div>
@@ -87,13 +109,14 @@ function render_admin_dashboard(
       function toggleNav() {
         var nav = document.getElementById('adminNav');
         var icon = document.getElementById('navToggleIcon');
-        if (nav.style.display === 'none') {
-          nav.style.display = 'flex';
-          icon.textContent = '◀';
-        } else {
-          nav.style.display = 'none';
-          icon.textContent = '▶';
-        }
+        if (nav.style.display === 'none') { nav.style.display = 'flex'; icon.textContent = '◀'; }
+        else { nav.style.display = 'none'; icon.textContent = '▶'; }
+      }
+      function toggleGroup(g) {
+        var el = document.getElementById('grpItems_' + g);
+        var ic = document.getElementById('grp_' + g);
+        if (el.style.display === 'none') { el.style.display = 'block'; ic.textContent = '▼'; }
+        else { el.style.display = 'none'; ic.textContent = '▶'; }
       }
       </script>
 
