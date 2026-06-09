@@ -629,6 +629,34 @@ function imap_cmd(string $host, int $port, string $user, string $pass, string $c
     return ['resp' => $resp];
 }
 
+function imap_fetch_msg(string $host, int $port, string $user, string $pass, string $mailbox, int $msgUid): array
+{
+    $errno = 0; $errstr = '';
+    $prefix = ($port == 993) ? 'ssl://' : '';
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+    $fp = @stream_socket_client($prefix . $host . ':' . $port, $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) return ['error' => "Connection failed: $errstr"];
+    stream_set_timeout($fp, 30);
+    $buf = fread($fp, 8192);
+    $tag = 1;
+    $resp = '';
+    $c = function($cmd) use ($fp, &$tag) { fwrite($fp, "A$tag $cmd\r\n"); fflush($fp); $tag++; };
+    $r = function($tagMatch = null) use ($fp) {
+        $out = '';
+        while ($chunk = @fread($fp, 65536)) {
+            $out .= $chunk;
+            if (preg_match('/^A\d+ (OK|NO|BAD|BYE)/m', $out)) break;
+        }
+        return $out;
+    };
+    $c("LOGIN $user $pass"); $r();
+    $c("SELECT \"$mailbox\""); $r();
+    $c("FETCH $msgUid (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] BODY.PEEK[TEXT])");
+    $resp = $r();
+    fclose($fp);
+    return ['resp' => $resp];
+}
+
 function imap_fetch_mail(string $host, int $port, string $user, string $pass, string $mailbox = 'INBOX', int $limit = 20): array
 {
     $errno = 0; $errstr = '';

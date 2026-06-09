@@ -2617,22 +2617,22 @@ function admin_inbox(): void
             </form>
           </div>
         <?php elseif ($viewMsg && $imapPass):
-          // Fetch full message (header + body in one command)
-          $raw = imap_cmd($imapHost, $imapPort, $activeMailbox, $imapPass, "FETCH $viewMsg (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] BODY.PEEK[TEXT])");
+          // Fetch full message via single connection (SELECT + FETCH)
+          $raw = imap_fetch_msg($imapHost, $imapPort, $activeMailbox, $imapPass, $folder, $viewMsg);
           $resp = $raw['resp'] ?? '';
+          if (isset($raw['error'])) $resp = '';
           preg_match('/^FROM:\s*(.+)/im', $resp, $fm);
           preg_match('/^SUBJECT:\s*(.+)/im', $resp, $sm);
           preg_match('/^DATE:\s*(.+)/im', $resp, $dm);
           $from = trim(mb_decode_mimeheader($fm[1] ?? 'Unknown'));
           $subject = trim(mb_decode_mimeheader($sm[1] ?? '(no subject)'));
           $date = trim($dm[1] ?? '');
-          // Extract body after the header section
+          // Extract body: look for the last literal {size} after header
           $bodyClean = '';
-          if (preg_match('/BODY\[TEXT\]\s+\{(\d+)\}\r\n(.*?)(\r\nA\d+\s|$)/s', $resp, $bm)) {
+          if (preg_match('/BODY\[TEXT\]\s*\{(\d+)\}\s*\r?\n(.*?)(\r?\nA\d+\s|$)/s', $resp, $bm)) {
               $bodyClean = substr($bm[2], 0, (int)$bm[1]);
-          } elseif (preg_match('/\{(\d+)\}\r\n(.*)/s', $resp, $bm)) {
-              // Fallback: get last literal
-              $bodyClean = substr($bm[2], 0, (int)$bm[1]);
+          } elseif (preg_match('/\{(?:4|5)\d+\}\s*\r?\n(.*)/s', $resp, $bm)) {
+              $bodyClean = trim($bm[1]);
           }
           $bodyClean = trim($bodyClean);
           $replySubject = preg_match('/^Re:/i', $subject) ? $subject : 'Re: ' . $subject;
