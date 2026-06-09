@@ -2559,8 +2559,8 @@ function admin_inbox(array $user): void
         $allowedEmails = $allowed->fetchAll(PDO::FETCH_COLUMN);
         $mailboxes = array_values(array_filter($allMailboxes, fn($m) => in_array($m['username'], $allowedEmails)));
     }
-    // Get all system users for access management
-    $allUsers = db()->query("SELECT id, username, full_name, role FROM users WHERE is_deleted=0 ORDER BY username")->fetchAll();
+    // Get all system users for access management (exclude customers)
+    $allUsers = db()->query("SELECT id, username, full_name, role FROM users WHERE is_deleted=0 AND role != 'customer' ORDER BY username")->fetchAll();
     $activeMailbox = $viewMailbox ?: ($mailboxes[0]['username'] ?? '');
     $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
     $imapPass = $creds[$activeMailbox] ?? '';
