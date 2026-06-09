@@ -4,7 +4,7 @@ function render_home(array $featured, array $newDrops, array $collections, array
 {
     ob_start(); ?>
     <div id="dropCountdown" style="text-align:center;padding:16px;margin-bottom:20px;background:rgba(0,200,255,0.05);border:1px solid rgba(0,200,255,0.15);border-radius:8px;font-family:var(--mono)">
-      <p style="font-size:12px;color:var(--cyan);margin-bottom:6px">🔥 NEXT DROP IN</p>
+      <p style="font-size:12px;color:var(--cyan);margin-bottom:6px">🚀 SITE GOES LIVE IN</p>
       <div style="display:flex;justify-content:center;gap:16px;font-size:28px;font-weight:800;color:var(--text)">
         <span><span id="cdDays">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">DAYS</span></span>
         <span style="color:var(--cyan)">:</span>
