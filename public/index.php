@@ -1230,6 +1230,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_flash('notice', 'Membership plan created.');
             redirect('/?page=admin&tab=memberships');
 
+        case 'admin_edit_membership_plan':
+            if (!$user || !is_admin($user)) { abort(403); }
+            $id = (int)$_POST['id'];
+            $benefits = array_filter(array_map('trim', explode("\n", $_POST['benefits'] ?? '')));
+            db()->prepare("UPDATE membership_plans SET name=?, description=?, price=?, benefits=?, is_active=? WHERE id=?")
+                ->execute([$_POST['name'], $_POST['description'], (float)$_POST['price'], json_encode(array_values($benefits)), (int)$_POST['is_active'], $id]);
+            session_flash('notice', 'Plan updated.');
+            redirect('/?page=admin&tab=memberships');
+
+        case 'admin_delete_membership_plan':
+            if (!$user || !is_admin($user)) { abort(403); }
+            db()->prepare("DELETE FROM membership_plans WHERE id=?")->execute([(int)$_POST['id']]);
+            session_flash('notice', 'Plan deleted.');
+            redirect('/?page=admin&tab=memberships');
+
         case 'admin_generate_invoice':
             if (!$user || !is_admin($user)) { abort(403); }
             $uid = (int)$_POST['user_id'];
