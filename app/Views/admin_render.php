@@ -2689,24 +2689,21 @@ function admin_security(): void
       <?php endif; ?>
     </div>
     <script>
-    document.getElementById('adminNav')?.addEventListener('click', function(e) {
-      var li = e.target.closest('li.sub-menu');
-      if (!li) return;
-      var link = li.querySelector('a');
-      if (link && !li.contains(e.target)) return;
+    document.addEventListener('click', function(e) {
+      var a = e.target.closest('#adminNav li.sub-menu > a');
+      if (!a) return;
+      e.preventDefault();
+      var li = a.parentNode;
       var ul = li.querySelector('ul');
-      if (ul) {
-        e.preventDefault();
-        var arrow = li.querySelector('.arrow');
-        if (ul.style.display === 'block') {
-          ul.style.display = 'none';
-          if (arrow) arrow.style.transform = 'rotate(0deg)';
-        } else {
-          document.querySelectorAll('#adminNav li.sub-menu ul').forEach(function(u) { u.style.display = 'none'; });
-          document.querySelectorAll('#adminNav li.sub-menu .arrow').forEach(function(a) { a.style.transform = 'rotate(0deg)'; });
-          ul.style.display = 'block';
-          if (arrow) arrow.style.transform = 'rotate(90deg)';
-        }
+      var arrow = li.querySelector('.arrow');
+      if (ul && ul.style.display === 'block') {
+        ul.style.display = 'none';
+        if (arrow) arrow.style.transform = 'rotate(0deg)';
+      } else if (ul) {
+        document.querySelectorAll('#adminNav li.sub-menu ul').forEach(function(u) { u.style.display = 'none'; });
+        document.querySelectorAll('#adminNav li.sub-menu .arrow').forEach(function(a2) { a2.style.transform = 'rotate(0deg)'; });
+        ul.style.display = 'block';
+        if (arrow) arrow.style.transform = 'rotate(90deg)';
       }
     });
     </script>
