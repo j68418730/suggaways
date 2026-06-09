@@ -2605,43 +2605,51 @@ function admin_inbox(): void
 
       <!-- RIGHT PANEL -->
       <div class="panel" style="padding:0;overflow:hidden;min-height:400px">
-        <?php if ($subtab === 'compose'): $composeMailbox = $_GET['mailbox'] ?? ($mailboxes[0]['username'] ?? ''); ?>
+        <?php if ($subtab === 'compose'): $composeMailbox = $_GET['mailbox'] ?? ($mailboxes[0]['username'] ?? ''); $replyTo = $_GET['to'] ?? ''; $replySubject = $_GET['subject'] ?? ''; ?>
           <div style="padding:16px">
             <h2 style="font-size:18px;margin-bottom:16px">✉️ Compose — <?= e($composeMailbox) ?></h2>
             <form method="post" class="form" style="max-width:100%">
               <?= csrf_field() ?><input type="hidden" name="action" value="admin_send_email">
-              <div class="form-row"><label>From<select name="from_email" style="width:100%"><?php foreach ($mailboxes as $m): ?><option value="<?= e($m['username']) ?>" <?= $m['username'] === $composeMailbox ? 'selected' : '' ?>><?= e($m['username']) ?></option><?php endforeach; ?></select></label><label>To<input name="to_email" type="email" required placeholder="recipient@example.com"></label></div>
-              <label>Subject<input name="subject" required></label>
+              <div class="form-row"><label>From<select name="from_email" style="width:100%"><?php foreach ($mailboxes as $m): ?><option value="<?= e($m['username']) ?>" <?= $m['username'] === $composeMailbox ? 'selected' : '' ?>><?= e($m['username']) ?></option><?php endforeach; ?></select></label><label>To<input name="to_email" type="email" required value="<?= e($replyTo) ?>" placeholder="recipient@example.com"></label></div>
+              <label>Subject<input name="subject" required value="<?= e($replySubject) ?>"></label>
               <label><textarea name="body" required rows="12" style="font-family:var(--mono);font-size:13px;min-height:200px"></textarea></label>
               <button class="button primary" type="submit">Send as <?= e($composeMailbox) ?></button>
             </form>
           </div>
-        <?php elseif ($viewMsg && $imapPass): ?>
-          <?php
-          $raw = imap_cmd($imapHost, $imapPort, $activeMailbox, $imapPass, "FETCH $viewMsg (BODY[TEXT])");
-          $body = $raw['resp'] ?? '';
-          $raw2 = imap_cmd($imapHost, $imapPort, $activeMailbox, $imapPass, "FETCH $viewMsg (BODY[HEADER.FIELDS (FROM SUBJECT DATE)])");
-          $header = $raw2['resp'] ?? '';
-          preg_match('/^FROM:\s*(.+)/im', $header, $fm);
-          preg_match('/^SUBJECT:\s*(.+)/im', $header, $sm);
-          preg_match('/^DATE:\s*(.+)/im', $header, $dm);
-          $from = trim($fm[1] ?? 'Unknown');
+        <?php elseif ($viewMsg && $imapPass):
+          // Fetch full message (header + body in one command)
+          $raw = imap_cmd($imapHost, $imapPort, $activeMailbox, $imapPass, "FETCH $viewMsg (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] BODY.PEEK[TEXT])");
+          $resp = $raw['resp'] ?? '';
+          preg_match('/^FROM:\s*(.+)/im', $resp, $fm);
+          preg_match('/^SUBJECT:\s*(.+)/im', $resp, $sm);
+          preg_match('/^DATE:\s*(.+)/im', $resp, $dm);
+          $from = trim(mb_decode_mimeheader($fm[1] ?? 'Unknown'));
           $subject = trim(mb_decode_mimeheader($sm[1] ?? '(no subject)'));
           $date = trim($dm[1] ?? '');
+          // Extract body after the header section
           $bodyClean = '';
-          if (preg_match('/\{(\d+)\}\r\n(.*)/s', $body, $bm)) $bodyClean = substr($bm[2], 0, (int)$bm[1]);
+          if (preg_match('/BODY\[TEXT\]\s+\{(\d+)\}\r\n(.*?)(\r\nA\d+\s|$)/s', $resp, $bm)) {
+              $bodyClean = substr($bm[2], 0, (int)$bm[1]);
+          } elseif (preg_match('/\{(\d+)\}\r\n(.*)/s', $resp, $bm)) {
+              // Fallback: get last literal
+              $bodyClean = substr($bm[2], 0, (int)$bm[1]);
+          }
+          $bodyClean = trim($bodyClean);
+          $replySubject = preg_match('/^Re:/i', $subject) ? $subject : 'Re: ' . $subject;
+          $replyTo = preg_match('/<([^>]+)>/', $from, $rm) ? $rm[1] : $from;
           ?>
           <div style="padding:16px">
-            <div style="display:flex;gap:8px;margin-bottom:16px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
               <a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($activeMailbox) ?>&folder=<?= e($folder) ?>" class="button" style="padding:6px 14px;min-height:auto;font-size:12px">← Back</a>
+              <a href="/?page=admin&tab=inbox&subtab=compose&mailbox=<?= e($activeMailbox) ?>&to=<?= e(urlencode($replyTo)) ?>&subject=<?= e(urlencode($replySubject)) ?>" class="button" style="padding:6px 14px;min-height:auto;font-size:12px">↩ Reply</a>
               <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_message"><input type="hidden" name="mailbox" value="<?= e($activeMailbox) ?>"><input type="hidden" name="msg_uid" value="<?= $viewMsg ?>"><button class="button" type="submit" style="padding:6px 14px;min-height:auto;font-size:12px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete?')">🗑 Delete</button></form>
             </div>
             <div style="padding:16px;background:var(--surface2);border-radius:6px;margin-bottom:16px">
-              <p style="font-size:12px;color:var(--text2)">From: <strong style="color:var(--text)"><?= e($from) ?></strong></p>
+              <p style="font-size:12px;color:var(--text2)">From: <strong style="color:var(--text);word-break:break-all"><?= e($from) ?></strong></p>
               <p style="font-size:14px;font-weight:600;margin:8px 0"><?= e($subject) ?></p>
               <p style="font-size:11px;color:var(--text2)"><?= e($date) ?></p>
             </div>
-            <div style="padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:13px;line-height:1.7;white-space:pre-wrap"><?= e($bodyClean) ?></div>
+            <div style="padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:13px;line-height:1.7;white-space:pre-wrap;max-height:60vh;overflow-y:auto"><?= e($bodyClean) ?></div>
           </div>
         <?php elseif ($subtab === 'accounts'): ?>
           <div style="padding:16px">

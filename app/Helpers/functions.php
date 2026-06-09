@@ -612,19 +612,19 @@ function imap_cmd(string $host, int $port, string $user, string $pass, string $c
     $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
     $fp = @stream_socket_client($prefix . $host . ':' . $port, $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
     if (!$fp) return ['error' => "Connection failed: $errstr"];
-    stream_set_timeout($fp, 10);
+    stream_set_timeout($fp, 30);
     $greeting = fread($fp, 8192);
     $tag = 1;
     $resp = '';
 
     $doCmd = function($c) use ($fp, &$tag) { fwrite($fp, "A$tag $c\r\n"); fflush($fp); $tag++; };
     $doCmd("LOGIN $user $pass");
-    do { $chunk = fread($fp, 8192); $resp .= $chunk; } while (!preg_match('/^A\d+ (OK|NO|BAD|BYE).*/m', $resp));
+    do { $chunk = @fread($fp, 65536); if ($chunk === false || $chunk === '') break; $resp .= $chunk; } while (!preg_match('/^A\d+ (OK|NO|BAD|BYE).*/m', $resp));
     if (!preg_match('/^A\d+ OK/m', $resp)) { fclose($fp); return ['error' => 'Login failed']; }
 
     $resp = '';
     $doCmd($command);
-    do { $chunk = fread($fp, 8192); $resp .= $chunk; } while (!preg_match('/^A\d+ (OK|NO|BAD|BYE).*/m', $resp));
+    do { $chunk = @fread($fp, 65536); if ($chunk === false || $chunk === '') break; $resp .= $chunk; } while (!preg_match('/^A\d+ (OK|NO|BAD|BYE)/m', $resp));
     fclose($fp);
     return ['resp' => $resp];
 }
