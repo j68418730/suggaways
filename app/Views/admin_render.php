@@ -105,7 +105,7 @@ function render_admin_dashboard(
             'contact' => admin_contact(),
             'shipping' => admin_shipping(),
             'todos' => admin_todos($todos),
-            'inbox' => admin_inbox(),
+            'inbox' => admin_inbox($user),
             'newsletter' => admin_newsletter(),
             'memberships' => admin_memberships(),
             'security' => admin_security(),
@@ -2534,7 +2534,7 @@ function admin_security(): void
     <?php
 }
 
-function admin_inbox(): void
+function admin_inbox(array $user): void
 {
     $subtab = $_GET['subtab'] ?? 'inbox';
     $folder = $_GET['folder'] ?? 'INBOX';
@@ -2544,11 +2544,23 @@ function admin_inbox(): void
     $viewMsg = (int)($_GET['msg'] ?? 0);
     $search = trim($_GET['q'] ?? '');
 
-    // Fetch mailboxes
-    $mailboxes = [];
+    // Determine which mailboxes this user can see
+    $isSuperAdmin = in_array($user['role'] ?? '', ['webmaster', 'super_admin']);
+    // Fetch all mailboxes
+    $allMailboxes = [];
     if (file_exists($dbPath)) {
-        try { $sqldb = new PDO("sqlite:$dbPath"); $r = $sqldb->query("SELECT username, full_name FROM mailbox WHERE active=1 ORDER BY username"); $mailboxes = $r ? $r->fetchAll(PDO::FETCH_ASSOC) : []; } catch (Exception $e) {}
+        try { $sqldb = new PDO("sqlite:$dbPath"); $r = $sqldb->query("SELECT username, full_name FROM mailbox WHERE active=1 ORDER BY username"); $allMailboxes = $r ? $r->fetchAll(PDO::FETCH_ASSOC) : []; } catch (Exception $e) {}
     }
+    // Filter by access
+    $mailboxes = $allMailboxes;
+    if (!$isSuperAdmin && $user) {
+        $allowed = db()->prepare("SELECT mailbox_email FROM email_access WHERE user_id=?");
+        $allowed->execute([(int)$user['id']]);
+        $allowedEmails = $allowed->fetchAll(PDO::FETCH_COLUMN);
+        $mailboxes = array_values(array_filter($allMailboxes, fn($m) => in_array($m['username'], $allowedEmails)));
+    }
+    // Get all system users for access management
+    $allUsers = db()->query("SELECT id, username, full_name, role FROM users WHERE is_deleted=0 ORDER BY username")->fetchAll();
     $activeMailbox = $viewMailbox ?: ($mailboxes[0]['username'] ?? '');
     $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
     $imapPass = $creds[$activeMailbox] ?? '';
@@ -2627,14 +2639,7 @@ function admin_inbox(): void
           $from = trim(mb_decode_mimeheader($fm[1] ?? 'Unknown'));
           $subject = trim(mb_decode_mimeheader($sm[1] ?? '(no subject)'));
           $date = trim($dm[1] ?? '');
-          // Extract body: look for the last literal {size} after header
-          $bodyClean = '';
-          if (preg_match('/BODY\[TEXT\]\s*\{(\d+)\}\s*\r?\n(.*?)(\r?\nA\d+\s|$)/s', $resp, $bm)) {
-              $bodyClean = substr($bm[2], 0, (int)$bm[1]);
-          } elseif (preg_match('/\{(?:4|5)\d+\}\s*\r?\n(.*)/s', $resp, $bm)) {
-              $bodyClean = trim($bm[1]);
-          }
-          $bodyClean = trim($bodyClean);
+          $bodyClean = extract_email_body($resp);
           $replySubject = preg_match('/^Re:/i', $subject) ? $subject : 'Re: ' . $subject;
           $replyTo = preg_match('/<([^>]+)>/', $from, $rm) ? $rm[1] : $from;
           ?>
@@ -2658,13 +2663,35 @@ function admin_inbox(): void
               <form method="post" class="form" style="max-width:400px"><?= csrf_field() ?><input type="hidden" name="action" value="admin_create_email"><div class="form-row"><label>Username<input name="local_part" required></label><label>@<?= e($mailDomain) ?></label></div><label>Full Name<input name="full_name"></label><label>Password<input name="password" type="password" required minlength="6"></label><label>Quota (MB)<input name="quota" type="number" value="1024"></label><button class="button primary" type="submit">Create</button></form>
             </details>
             <table class="table" style="font-size:13px"><tr><th>Email</th><th>Name</th><th>Status</th><th>Actions</th></tr>
-            <?php foreach ($mailboxes as $m): ?>
+            <?php foreach ($allMailboxes as $m): ?>
               <tr><td><a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($m['username']) ?>"><?= e($m['username']) ?></a></td><td><?= e($m['full_name'] ?: '—') ?></td><td><span class="badge" style="background:var(--green)">Active</span></td>
                 <td><form method="post" style="display:inline" onsubmit="return confirm('Delete?')"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_email"><input type="hidden" name="email" value="<?= e($m['username']) ?>"><button class="button" type="submit" style="padding:2px 6px;font-size:10px">Del</button></form>
                 <form method="post" style="display:inline-flex;gap:4px"><?= csrf_field() ?><input type="hidden" name="action" value="admin_change_email_password"><input type="hidden" name="email" value="<?= e($m['username']) ?>"><input name="new_password" type="password" placeholder="PW" style="width:60px;padding:2px 4px;font-size:10px"><button class="button" type="submit" style="padding:2px 6px;font-size:10px">Set</button></form></td>
               </tr>
             <?php endforeach; ?>
             </table>
+
+            <?php if ($isSuperAdmin): ?>
+            <h3 style="margin-top:20px;font-size:15px">🔐 Email Access</h3>
+            <p class="hint">Assign which users can see which mailboxes in the Inbox tab.</p>
+            <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="admin_save_email_access">
+            <table class="table" style="font-size:12px">
+              <tr><th>User</th><th>Role</th><?php foreach ($allMailboxes as $m): ?><th style="text-align:center;font-size:10px"><?= e(explode('@', $m['username'])[0]) ?></th><?php endforeach; ?></tr>
+              <?php foreach ($allUsers as $u):
+                $access = db()->prepare("SELECT mailbox_email FROM email_access WHERE user_id=?");
+                $access->execute([(int)$u['id']]);
+                $userAccess = $access->fetchAll(PDO::FETCH_COLUMN);
+              ?>
+              <tr><td><?= e($u['full_name'] ?: $u['username']) ?></td><td style="font-size:10px"><?= e($u['role']) ?></td>
+                <?php foreach ($allMailboxes as $m): ?>
+                  <td style="text-align:center"><input type="checkbox" name="access[<?= (int)$u['id'] ?>][]" value="<?= e($m['username']) ?>" <?= in_array($m['username'], $userAccess) ? 'checked' : '' ?>></td>
+                <?php endforeach; ?>
+              </tr>
+              <?php endforeach; ?>
+            </table>
+            <button class="button primary" type="submit" style="margin-top:8px">Save Access</button>
+            </form>
+            <?php endif; ?>
           </div>
         <?php else: ?>
           <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px">
