@@ -1201,6 +1201,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($email) {
                 $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
                 $sqldb->prepare("DELETE FROM mailbox WHERE username=?")->execute([$email]);
+                // Clean up maildir
+                list($local, $domain) = explode('@', $email);
+                $maildir = "/www/vmail/$domain/$local";
+                if (is_dir($maildir)) {
+                    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($maildir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+                    foreach ($it as $f) $f->isDir() ? rmdir($f->getPathname()) : unlink($f->getPathname());
+                    rmdir($maildir);
+                }
+                // Clear password from site settings
+                $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
+                unset($creds[$email]);
+                set_site_setting('_mailbox_creds', json_encode($creds));
+                // Clear email access
+                db()->prepare("DELETE FROM email_access WHERE mailbox_email=?")->execute([$email]);
                 session_flash('notice', "Email $email deleted.");
             }
             redirect('/?page=admin&tab=inbox&subtab=accounts');
