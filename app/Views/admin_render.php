@@ -83,23 +83,16 @@ function render_admin_dashboard(
           <span id="navToggleIcon" style="font-size:14px;color:var(--text2)">◀</span>
         </div>
         <nav class="admin-nav" id="adminNav">
-          <?php foreach ($navGroups as $gk => $g): ?>
-            <div style="margin-bottom:4px">
-              <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 8px;font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;cursor:pointer" onclick="toggleGroup('<?= $gk ?>')">
-                <span><?= $g['label'] ?></span>
-                <span id="grp_<?= $gk ?>" style="font-size:8px">▼</span>
-              </div>
-              <div id="grpItems_<?= $gk ?>">
-                <?php foreach ($g['items'] as $item):
-                  $visible = $isAdmin || !in_array($item['tab'], ['employees','reorder','payments','audit','signins','bugreports','pages','contact','sizecharts','shipping','newsletter'], true);
-                  $superOnly = in_array($item['tab'], ['inbox','memberships','todos','security'], true);
-                  if (!$visible && !$isAdmin) continue;
-                  if ($superOnly && !$isSuperAdmin) continue;
-                ?>
-                  <a href="/?page=admin&tab=<?= $item['tab'] ?>" class="<?= $effectiveTab === $item['tab'] ? 'active' : '' ?>"><?= $item['label'] ?></a>
-                <?php endforeach; ?>
-              </div>
-            </div>
+          <?php $first = true; foreach ($navGroups as $gk => $g): ?>
+            <?php if (!$first): ?><hr style="border-color:var(--line-soft);margin:8px 0"><?php endif; $first = false; ?>
+            <?php foreach ($g['items'] as $item):
+              $visible = $isAdmin || !in_array($item['tab'], ['employees','reorder','payments','audit','signins','bugreports','pages','contact','sizecharts','shipping','newsletter'], true);
+              $superOnly = in_array($item['tab'], ['inbox','memberships','todos','security'], true);
+              if (!$visible && !$isAdmin) continue;
+              if ($superOnly && !$isSuperAdmin) continue;
+            ?>
+              <a href="/?page=admin&tab=<?= $item['tab'] ?>" class="<?= $effectiveTab === $item['tab'] ? 'active' : '' ?>"><?= $item['label'] ?></a>
+            <?php endforeach; ?>
           <?php endforeach; ?>
         </nav>
       </div>
@@ -109,12 +102,6 @@ function render_admin_dashboard(
         var icon = document.getElementById('navToggleIcon');
         if (nav.style.display === 'none') { nav.style.display = 'flex'; icon.textContent = '◀'; }
         else { nav.style.display = 'none'; icon.textContent = '▶'; }
-      }
-      function toggleGroup(g) {
-        var el = document.getElementById('grpItems_' + g);
-        var ic = document.getElementById('grp_' + g);
-        if (el.style.display === 'none') { el.style.display = 'block'; ic.textContent = '▼'; }
-        else { el.style.display = 'none'; ic.textContent = '▶'; }
       }
       </script>
 
