@@ -1173,7 +1173,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
                 $creds[$email] = $password;
                 set_site_setting('_mailbox_creds', json_encode($creds));
-                session_flash('notice', "Email account $email created.");
+                // Grant access + notify all webmaster/super_admin users
+                $admins = db()->query("SELECT id, email, full_name, username FROM users WHERE role IN ('webmaster','super_admin') AND is_deleted=0")->fetchAll();
+                foreach ($admins as $admin) {
+                    db()->prepare("INSERT IGNORE INTO email_access (user_id, mailbox_email) VALUES (?,?)")->execute([(int)$admin['id'], $email]);
+                }
+                $subject = "New email account created: $email";
+                $body = "A new email account has been created:<br><br>
+                    <strong>Email:</strong> $email<br>
+                    <strong>Password:</strong> $password<br>
+                    <strong>Created by:</strong> {$user['full_name']} ({$user['username']})<br><br>
+                    You can access this mailbox in the <a href='https://suggawayz.com/?page=admin&tab=inbox'>Admin Inbox</a>.<br><br>
+                    — SUGGAWAYZ Mail System";
+                foreach ($admins as $admin) {
+                    $to = $admin['email'] ?: $admin['username'];
+                    send_email($to, $subject, $body);
+                }
+                session_flash('notice', "Email account $email created. " . count($admins) . " admin(s) notified.");
             } catch (Exception $e) {
                 session_flash('error', 'Failed to create email: ' . $e->getMessage());
             }
@@ -1204,6 +1220,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 session_flash('error', 'Password must be at least 6 characters.');
             }
+            redirect('/?page=admin&tab=inbox&subtab=accounts');
+
+        case 'admin_save_email_access':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $access = $_POST['access'] ?? [];
+            db()->prepare("DELETE FROM email_access")->execute();
+            foreach ($access as $uid => $mailboxes) {
+                foreach ($mailboxes as $mbox) {
+                    db()->prepare("INSERT INTO email_access (user_id, mailbox_email) VALUES (?,?)")->execute([(int)$uid, $mbox]);
+                }
+            }
+            session_flash('notice', 'Email access updated.');
             redirect('/?page=admin&tab=inbox&subtab=accounts');
 
         case 'admin_send_email':
