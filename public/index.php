@@ -1287,6 +1287,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             redirect('/?page=admin&tab=inbox&subtab=inbox&mailbox=' . urlencode($mailbox) . '&_=' . time());
 
+        case 'admin_bulk_delete_msgs':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $mailbox = $_POST['mailbox'] ?? '';
+            $folder = $_POST['folder'] ?? 'INBOX';
+            $emptyAll = !empty($_POST['empty_all']);
+            $msgIds = $_POST['msg_ids'] ?? [];
+            if ($mailbox) {
+                $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
+                $pass = $creds[$mailbox] ?? '';
+                if ($pass) {
+                    $host = site_setting('imap_host', 'localhost');
+                    $port = (int)site_setting('imap_port', '143');
+                    $deleted = 0;
+                    if ($emptyAll) {
+                        $all = imap_fetch_mail($host, $port, $mailbox, $pass, $folder, 9999);
+                        foreach ($all as $m) { if (imap_delete_msg($host, $port, $mailbox, $pass, $folder, $m['uid'])) $deleted++; }
+                        session_flash('notice', "Emptied {$folder}: {$deleted} messages deleted.");
+                    } else {
+                        $ids = array_filter(array_map('intval', (array)$msgIds));
+                        foreach ($ids as $id) { if (imap_delete_msg($host, $port, $mailbox, $pass, $folder, $id)) $deleted++; }
+                        session_flash('notice', "{$deleted} message(s) deleted.");
+                    }
+                }
+            }
+            redirect('/?page=admin&tab=inbox&subtab=inbox&mailbox=' . urlencode($mailbox) . '&folder=' . urlencode($folder) . '&_=' . time());
+
         case 'admin_security_fix':
             if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
             $fixed = [];
