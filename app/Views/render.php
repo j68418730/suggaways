@@ -30,6 +30,7 @@ function render_home(array $featured, array $newDrops, array $collections, array
     </div>
     <script>
     (function(){
+      var now = new Date();
       var t = new Date(now.getFullYear(), now.getMonth(), 16, 13, 0, 0);
       if (now.getDate() > 16 || (now.getDate() === 16 && now.getHours() >= 13)) { document.getElementById('dropCountdown').style.display = 'none'; return; }
       function update() {
