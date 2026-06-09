@@ -395,7 +395,7 @@ function admin_coming_soon(): void
                   <?php endforeach; ?>
                 </select>
               </label>
-              <label>Release Date<input name="release_date" type="date" required style="width:auto;display:inline-block"></label>
+              <label>Release Date<input name="release_date" type="date" required style="width:140px;display:inline-block" title="Click to pick a date"></label>
 <label style="margin-left:8px">Time<input name="release_time" type="time" value="13:00" style="width:auto;display:inline-block"></label>
             </div>
             <label>Image URL<input name="image" placeholder="/assets/img/products/swag.jpg"></label>
@@ -423,7 +423,7 @@ function admin_coming_soon(): void
                   <input type="hidden" name="id" value="<?= (int)$item['id'] ?>">
                   <input name="name" value="<?= e($item['name']) ?>" style="width:80px;padding:4px;font-size:11px">
                   <input name="price" value="<?= e($item['price']) ?>" type="number" step="0.01" style="width:60px;padding:4px;font-size:11px">
-                  <input name="release_date" value="<?= e(date('Y-m-d', strtotime($item['release_date']))) ?>" type="date" style="width:100px;padding:4px;font-size:11px">
+                  <input name="release_date" value="<?= e(date('Y-m-d', strtotime($item['release_date']))) ?>" type="date" style="width:110px;padding:4px;font-size:11px">
                   <input name="release_time" value="<?= e(date('H:i', strtotime($item['release_date']))) ?>" type="time" style="width:60px;padding:4px;font-size:11px">
                   <button class="button" type="submit" style="padding:4px 6px;min-height:auto;font-size:11px">Save</button>
                 </form>
