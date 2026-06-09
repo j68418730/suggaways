@@ -87,13 +87,19 @@ function render_admin_dashboard(
           <span id="navToggleIcon" style="font-size:14px;color:var(--text2)">◀</span>
         </div>
         <nav class="admin-nav" id="adminNav">
-          <?php $rightTabs = ['employees','memberships','signins','audit','inbox','newsletter','contact','pages','blog','events','todos','bugreports','settings','security','sizecharts','shipping']; ?>
-          <?php foreach ($allNavItems as $tabKey):
-            if (in_array($tabKey, $rightTabs)) continue;
-            $label = $tabKey;
-            foreach ($navGroups as $g) foreach ($g['items'] as $item) { if ($item['tab'] === $tabKey) { $label = $item['label']; break 2; } }
-          ?>
-            <a href="/?page=admin&tab=<?= $tabKey ?>" class="<?= $effectiveTab === $tabKey ? 'active' : '' ?>"><?= $label ?></a>
+          <?php foreach ($navGroups as $gk => $g): ?>
+            <div class="nav-group-header" onclick="toggleGroup('<?= $gk ?>')">
+              <span><?= $g['label'] ?></span>
+              <span class="nav-group-arrow" id="arr_<?= $gk ?>">▼</span>
+            </div>
+            <div class="nav-group-items" id="grp_<?= $gk ?>">
+              <?php foreach ($g['items'] as $item):
+                $superOnly = in_array($item['tab'], ['inbox','memberships','todos','security'], true);
+                if ($superOnly && !$isSuperAdmin) continue;
+              ?>
+                <a href="/?page=admin&tab=<?= $item['tab'] ?>" class="<?= $effectiveTab === $item['tab'] ? 'active' : '' ?>"><?= $item['label'] ?></a>
+              <?php endforeach; ?>
+            </div>
           <?php endforeach; ?>
         </nav>
       </div>
@@ -150,33 +156,6 @@ function render_admin_dashboard(
             default => admin_dashboard($stats, $orders, $lowStockProducts, $products, $customers),
         };
         ?>
-      </div>
-      <div class="admin-right">
-        <?php $rightGroups = [
-          'staff' => ['label' => '👥 User & Staff', 'items' => ['employees','memberships','signins','audit']],
-          'comm' => ['label' => '📧 Communication', 'items' => ['inbox','newsletter','contact']],
-          'content' => ['label' => '📝 Content', 'items' => ['pages','blog','events']],
-          'ops' => ['label' => '🔧 Operations', 'items' => ['todos','bugreports','sizecharts','shipping']],
-          'sys' => ['label' => '⚙️ System', 'items' => ['settings','security']],
-        ]; ?>
-        <?php foreach ($rightGroups as $rk => $rg): ?>
-          <div>
-            <div class="nav-group-header" onclick="toggleGroup('r_<?= $rk ?>')">
-              <span><?= $rg['label'] ?></span>
-              <span class="nav-group-arrow" id="arr_r_<?= $rk ?>">▼</span>
-            </div>
-            <div class="nav-group-items" id="grp_r_<?= $rk ?>">
-              <?php foreach ($rg['items'] as $tabKey):
-                $label = $tabKey;
-                foreach ($navGroups as $g) foreach ($g['items'] as $item) { if ($item['tab'] === $tabKey) { $label = $item['label']; break 2; } }
-                $superOnly = in_array($tabKey, ['inbox','memberships','todos','security'], true);
-                if ($superOnly && !$isSuperAdmin) continue;
-              ?>
-                <a href="/?page=admin&tab=<?= $tabKey ?>" class="<?= $effectiveTab === $tabKey ? 'active' : '' ?>"><?= $label ?></a>
-              <?php endforeach; ?>
-            </div>
-          </div>
-        <?php endforeach; ?>
       </div>
     </div>
     <?php if ($isSuperAdmin && !empty($todos)): ?>
