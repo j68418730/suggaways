@@ -1189,7 +1189,7 @@ function admin_contact(): void
             <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e(substr($s['message'], 0, 60)) ?></td>
             <td><?= $s['is_read'] ? 'Read' : 'New' ?></td>
             <td style="white-space:nowrap">
-              <button class="button" type="button" style="padding:2px 6px;min-height:auto;font-size:10px" onclick="viewContact(<?= (int)$s['id'] ?>, '<?= e(addslashes($s['name'])) ?>', '<?= e(addslashes($s['email'])) ?>', '<?= e(addslashes($s['subject'] ?? '')) ?>', '<?= e(addslashes($s['message'])) ?>')">View</button>
+              <button class="button" type="button" style="padding:2px 6px;min-height:auto;font-size:10px" data-id="<?= (int)$s['id'] ?>" data-name="<?= e($s['name']) ?>" data-email="<?= e($s['email']) ?>" data-subject="<?= e($s['subject'] ?? '') ?>" data-message="<?= e($s['message']) ?>" onclick="viewContact(this)">View</button>
               <?php if (!$s['is_read']): ?>
                 <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_mark_contact_read"><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px">Read</button></form>
               <?php endif; ?>
@@ -1210,14 +1210,13 @@ function admin_contact(): void
       </div>
     </div>
     <script>
-    function viewContact(id, name, email, subject, message) {
-      document.getElementById('contactSubject').textContent = subject || '(No Subject)';
-      document.getElementById('contactName').textContent = name;
-      document.getElementById('contactEmail').textContent = email;
-      document.getElementById('contactBody').textContent = message;
+    function viewContact(btn) {
+      document.getElementById('contactSubject').textContent = btn.dataset.subject || '(No Subject)';
+      document.getElementById('contactName').textContent = btn.dataset.name;
+      document.getElementById('contactEmail').textContent = btn.dataset.email;
+      document.getElementById('contactBody').textContent = btn.dataset.message;
       document.getElementById('contactModal').style.display = 'flex';
-      // Auto-mark as read
-      fetch('/?page=admin&tab=contact&action=admin_mark_contact_read&id=' + id);
+      fetch('/?action=admin_mark_contact_read&id=' + btn.dataset.id);
     }
     </script>
     <?php
