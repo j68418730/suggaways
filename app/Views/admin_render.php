@@ -2321,29 +2321,17 @@ function admin_memberships(): void
       <h3>Membership Plans</h3>
       <table class="table" style="font-size:13px">
         <tr><th>Name</th><th>Price</th><th>Description</th><th>Benefits</th><th>Status</th><th>Actions</th></tr>
-        <?php foreach ($plans as $plan): $benefits = json_decode($plan['benefits'] ?? '[]', true); ?>
+        <?php foreach ($plans as $plan): $benefits = json_decode($plan['benefits'] ?? '[]', true); $pid = (int)$plan['id']; ?>
           <tr>
-            <form method="post" style="display:contents">
-              <?= csrf_field() ?>
-              <input type="hidden" name="action" value="admin_edit_membership_plan">
-              <input type="hidden" name="id" value="<?= (int)$plan['id'] ?>">
+            <form method="post" style="display:contents"><?= csrf_field() ?><input type="hidden" name="action" value="admin_edit_membership_plan"><input type="hidden" name="id" value="<?= $pid ?>">
               <td><input name="name" value="<?= e($plan['name']) ?>" style="width:90px;padding:2px 4px;font-size:11px"></td>
               <td><input name="price" value="<?= e($plan['price']) ?>" type="number" step="0.01" style="width:60px;padding:2px 4px;font-size:11px"></td>
               <td><textarea name="description" rows="3" style="width:180px;padding:4px;font-size:11px;font-family:var(--mono);word-wrap:break-word;white-space:pre-wrap"><?= e($plan['description'] ?? '') ?></textarea></td>
               <td><textarea name="benefits" rows="3" style="width:200px;padding:4px;font-size:11px;font-family:var(--mono);word-wrap:break-word;white-space:pre-wrap" placeholder="one per line"><?= e(implode("\n", $benefits)) ?></textarea></td>
-              <td>
-                <select name="is_active" style="padding:2px 4px;font-size:11px">
-                  <option value="1" <?= $plan['is_active'] ? 'selected' : '' ?>>Active</option>
-                  <option value="0" <?= !$plan['is_active'] ? 'selected' : '' ?>>Inactive</option>
-                </select>
-              </td>
-              <td style="white-space:nowrap">
-                <button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px">💾</button>
-              </td>
+              <td><select name="is_active" style="padding:2px 4px;font-size:11px"><option value="1" <?= $plan['is_active'] ? 'selected' : '' ?>>Active</option><option value="0" <?= !$plan['is_active'] ? 'selected' : '' ?>>Inactive</option></select></td>
+              <td><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px">💾</button></td>
             </form>
-            <td style="white-space:nowrap">
-              <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_membership_plan"><input type="hidden" name="id" value="<?= (int)$plan['id'] ?>"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Delete plan?')">Del</button></form>
-            </td>
+            <td><form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_membership_plan"><input type="hidden" name="id" value="<?= $pid ?>"><button class="button" type="submit" style="padding:2px 6px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)">Del</button></form></td>
           </tr>
         <?php endforeach; ?>
       </table>
