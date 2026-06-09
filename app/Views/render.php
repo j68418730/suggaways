@@ -3,6 +3,39 @@
 function render_home(array $featured, array $newDrops, array $collections, array $comingSoon = []): string
 {
     ob_start(); ?>
+    <div id="dropCountdown" style="text-align:center;padding:16px;margin-bottom:20px;background:rgba(0,200,255,0.05);border:1px solid rgba(0,200,255,0.15);border-radius:8px;font-family:var(--mono)">
+      <p style="font-size:12px;color:var(--cyan);margin-bottom:6px">🔥 NEXT DROP IN</p>
+      <div style="display:flex;justify-content:center;gap:16px;font-size:28px;font-weight:800;color:var(--text)">
+        <span><span id="cdDays">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">DAYS</span></span>
+        <span style="color:var(--cyan)">:</span>
+        <span><span id="cdHours">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">HOURS</span></span>
+        <span style="color:var(--cyan)">:</span>
+        <span><span id="cdMins">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">MINS</span></span>
+        <span style="color:var(--cyan)">:</span>
+        <span><span id="cdSecs">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">SECS</span></span>
+      </div>
+    </div>
+    <script>
+    (function(){
+      var now = new Date();
+      var target = new Date(now.getFullYear(), now.getMonth(), 16, 1, 0, 0);
+      if (now.getDate() > 16 || (now.getDate() === 16 && now.getHours() >= 1)) {
+        document.getElementById('dropCountdown').style.display = 'none';
+        return;
+      }
+      function update() {
+        var diff = Math.max(0, Math.floor((target - new Date()) / 1000));
+        var d = Math.floor(diff / 86400), h = Math.floor((diff % 86400) / 3600), m = Math.floor((diff % 3600) / 60), s = diff % 60;
+        document.getElementById('cdDays').textContent = String(d).padStart(2,'0');
+        document.getElementById('cdHours').textContent = String(h).padStart(2,'0');
+        document.getElementById('cdMins').textContent = String(m).padStart(2,'0');
+        document.getElementById('cdSecs').textContent = String(s).padStart(2,'0');
+        if (diff <= 0) document.getElementById('dropCountdown').style.display = 'none';
+      }
+      update();
+      setInterval(update, 1000);
+    })();
+    </script>
     <section class="section-title">
       <p class="eyebrow">Featured</p>
       <h2>Featured Collection</h2>
