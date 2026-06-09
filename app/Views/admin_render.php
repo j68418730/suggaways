@@ -2690,18 +2690,22 @@ function admin_security(): void
     </div>
     <script>
     document.getElementById('adminNav')?.addEventListener('click', function(e) {
-      var li = e.target.closest('.sub-menu > a');
+      var li = e.target.closest('li.sub-menu');
       if (!li) return;
-      var ul = li.parentElement.querySelector('ul');
+      var link = li.querySelector('a');
+      if (link && !li.contains(e.target)) return;
+      var ul = li.querySelector('ul');
       if (ul) {
         e.preventDefault();
+        var arrow = li.querySelector('.arrow');
         if (ul.style.display === 'block') {
           ul.style.display = 'none';
-          li.querySelector('.arrow').style.transform = 'rotate(0deg)';
+          if (arrow) arrow.style.transform = 'rotate(0deg)';
         } else {
-          document.querySelectorAll('#adminNav .sub-menu ul').forEach(function(u) { u.style.display = 'none'; u.previousElementSibling.querySelector('.arrow').style.transform = 'rotate(0deg)'; });
+          document.querySelectorAll('#adminNav li.sub-menu ul').forEach(function(u) { u.style.display = 'none'; });
+          document.querySelectorAll('#adminNav li.sub-menu .arrow').forEach(function(a) { a.style.transform = 'rotate(0deg)'; });
           ul.style.display = 'block';
-          li.querySelector('.arrow').style.transform = 'rotate(90deg)';
+          if (arrow) arrow.style.transform = 'rotate(90deg)';
         }
       }
     });
