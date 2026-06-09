@@ -2569,33 +2569,37 @@ function admin_inbox(): void
     .email-list tr.selected{background:rgba(0,200,255,0.08)}
     </style>
 
-    <div style="display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:start;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:220px 1fr;gap:16px;align-items:start;margin-bottom:16px">
       <!-- LEFT SIDEBAR -->
       <div class="panel email-sidebar" style="padding:0;overflow:hidden">
-        <?php foreach ($mailboxes as $m): ?>
-          <div class="acct"><?= e($m['username']) ?></div>
-          <?php foreach ($folderNames as $fk => $fl): ?>
-            <a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($m['username']) ?>&folder=<?= $fk ?>" class="<?= ($viewMailbox === $m['username'] && $folder === $fk) ? 'active' : '' ?>">
-              <span><?= $folderIcons[$fk] ?? '📁' ?></span> <?= $fl ?>
-            </a>
-          <?php endforeach; ?>
-          <div style="height:8px"></div>
+        <?php foreach ($mailboxes as $m): $mid = 'mbox_' . preg_replace('/[^a-z0-9]/i', '', $m['username']); ?>
+          <div class="acct" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between" onclick="var e=document.getElementById('<?= $mid ?>');e.style.display=e.style.display==='none'?'block':'none'">
+            <span><?= e($m['username']) ?></span>
+            <span style="font-size:10px;color:var(--text2)">▼</span>
+          </div>
+          <div id="<?= $mid ?>" style="<?= ($viewMailbox === $m['username']) ? '' : 'display:none' ?>">
+            <?php foreach ($folderNames as $fk => $fl): ?>
+              <a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($m['username']) ?>&folder=<?= $fk ?>" class="<?= ($viewMailbox === $m['username'] && $folder === $fk) ? 'active' : '' ?>">
+                <span><?= $folderIcons[$fk] ?? '📁' ?></span> <?= $fl ?>
+              </a>
+            <?php endforeach; ?>
+            <a href="/?page=admin&tab=inbox&subtab=compose&mailbox=<?= e($m['username']) ?>" style="display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px;color:var(--cyan);text-decoration:none"><span>✉️</span> Compose</a>
+          </div>
         <?php endforeach; ?>
-        <a href="/?page=admin&tab=inbox&subtab=compose" style="border-top:1px solid var(--border);margin-top:4px;padding:10px 12px"><span>✉️</span> Compose</a>
-        <a href="/?page=admin&tab=inbox&subtab=accounts" style="padding:6px 12px;font-size:11px;color:var(--text2)"><span>⚙️</span> Accounts</a>
+        <a href="/?page=admin&tab=inbox&subtab=accounts" style="display:flex;align-items:center;gap:8px;padding:10px 12px;font-size:12px;color:var(--text2);text-decoration:none;border-top:1px solid var(--border)"><span>⚙️</span> Accounts</a>
       </div>
 
       <!-- RIGHT PANEL -->
       <div class="panel" style="padding:0;overflow:hidden;min-height:400px">
-        <?php if ($subtab === 'compose'): ?>
+        <?php if ($subtab === 'compose'): $composeMailbox = $_GET['mailbox'] ?? ($mailboxes[0]['username'] ?? ''); ?>
           <div style="padding:16px">
-            <h2 style="font-size:18px;margin-bottom:16px">✉️ Compose Email</h2>
+            <h2 style="font-size:18px;margin-bottom:16px">✉️ Compose — <?= e($composeMailbox) ?></h2>
             <form method="post" class="form" style="max-width:100%">
               <?= csrf_field() ?><input type="hidden" name="action" value="admin_send_email">
-              <div class="form-row"><label>From<select name="from_email" style="width:100%"><?php foreach ($mailboxes as $m): ?><option value="<?= e($m['username']) ?>"><?= e($m['username']) ?></option><?php endforeach; ?></select></label><label>To<input name="to_email" type="email" required placeholder="recipient@example.com"></label></div>
+              <div class="form-row"><label>From<select name="from_email" style="width:100%"><?php foreach ($mailboxes as $m): ?><option value="<?= e($m['username']) ?>" <?= $m['username'] === $composeMailbox ? 'selected' : '' ?>><?= e($m['username']) ?></option><?php endforeach; ?></select></label><label>To<input name="to_email" type="email" required placeholder="recipient@example.com"></label></div>
               <label>Subject<input name="subject" required></label>
               <label><textarea name="body" required rows="12" style="font-family:var(--mono);font-size:13px;min-height:200px"></textarea></label>
-              <button class="button primary" type="submit">Send Email</button>
+              <button class="button primary" type="submit">Send as <?= e($composeMailbox) ?></button>
             </form>
           </div>
         <?php elseif ($viewMsg && $imapPass): ?>
