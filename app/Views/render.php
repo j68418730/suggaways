@@ -201,9 +201,7 @@ function render_shop(array $products, array $categories, ?string $currentCategor
         <h2>Choose Your Plan</h2>
       </section>
       <section class="product-grid">
-        <?php foreach ($membershipPlans as $plan): $benefits = json_decode($plan['benefits'] ?? '[]', true);
-          $isTestPlan = stripos($plan['name'], 'test') !== false;
-        ?>
+        <?php foreach ($membershipPlans as $plan): $benefits = json_decode($plan['benefits'] ?? '[]', true); $isTestPlan = stripos($plan['name'], 'test') !== false; ?>
           <div class="panel product-card" style="text-align:center;padding:24px 16px">
             <?php if ($isTestPlan): ?><span class="badge" style="background:var(--orange);margin-bottom:8px">🔑 Requires Code: DEV</span><?php endif; ?>
             <h3 style="font-size:18px;margin-bottom:8px"><?= e($plan['name']) ?></h3>
