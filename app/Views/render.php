@@ -142,7 +142,7 @@ function render_home(array $featured, array $newDrops, array $collections, array
     return ob_get_clean();
 }
 
-function render_shop(array $products, array $categories, ?string $currentCategory, string $sort, string $search, int $page = 1, int $totalPages = 1): string
+function render_shop(array $products, array $categories, ?string $currentCategory, string $sort, string $search, int $page = 1, int $totalPages = 1, array $membershipPlans = []): string
 {
     ob_start(); ?>
     <div class="shop-controls">
@@ -194,6 +194,37 @@ function render_shop(array $products, array $categories, ?string $currentCategor
           </article>
         <?php endforeach; ?>
       </section>
+
+      <?php if (!empty($membershipPlans)): ?>
+      <section class="section-title" style="margin-top:40px">
+        <p class="eyebrow">Membership</p>
+        <h2>Choose Your Plan</h2>
+      </section>
+      <section class="product-grid">
+        <?php foreach ($membershipPlans as $plan): $benefits = json_decode($plan['benefits'] ?? '[]', true); ?>
+          <div class="panel product-card" style="text-align:center;padding:24px 16px">
+            <h3 style="font-size:18px;margin-bottom:8px"><?= e($plan['name']) ?></h3>
+            <p style="font-size:32px;font-weight:800;color:var(--cyan);margin:12px 0">$<?= e(number_format((float)$plan['price'], 2)) ?><span style="font-size:13px;color:var(--muted)">/month</span></p>
+            <p style="font-size:12px;color:var(--muted);margin-bottom:12px"><?= e($plan['description'] ?? '') ?></p>
+            <ul style="text-align:left;list-style:none;padding:0;margin:12px 0">
+              <?php foreach ($benefits as $b): ?>
+                <li style="padding:3px 0;font-size:12px">✅ <?= e($b) ?></li>
+              <?php endforeach; ?>
+            </ul>
+            <form method="post" action="/?page=membership">
+              <?= csrf_field() ?>
+              <input type="hidden" name="action" value="join_membership">
+              <input type="hidden" name="plan_id" value="<?= (int)$plan['id'] ?>">
+              <button class="button primary" type="submit" style="width:100%">Join Now — $<?= e(number_format((float)$plan['price'], 2)) ?>/mo</button>
+              <label style="display:flex;align-items:center;gap:6px;justify-content:center;margin-top:8px;font-size:11px;color:var(--muted);cursor:pointer">
+                <input type="checkbox" name="auto_pay" value="1" checked> Auto-pay monthly
+              </label>
+            </form>
+          </div>
+        <?php endforeach; ?>
+      </section>
+      <?php endif; ?>
+
       <?php if ($totalPages > 1): ?>
         <div class="pagination" style="display:flex;justify-content:center;gap:6px;margin-top:24px">
           <?php if ($page > 1): ?>

@@ -27,6 +27,7 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
       <nav class="nav">
         <a href="/">⌂ Home</a>
         <a href="/?page=shop">🛒 Shop</a>
+        <a href="/?page=shop&category=sugga-gang-member">🔥 Join Sugga Gang</a>
         <a href="/?page=collections">📦 Collections</a>
         <a href="/?page=new-drops">🔥 New Drops</a>
         <a href="/?page=lookbook">📸 Events</a>
@@ -105,6 +106,7 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
         <div class="footer-col">
           <h4>Shop</h4>
           <a href="/?page=shop">All Products</a>
+          <a href="/?page=shop&category=sugga-gang-member">🔥 Join Sugga Gang</a>
           <a href="/?page=collections">Collections</a>
           <a href="/?page=new-drops">New Drops</a>
           <a href="/?page=lookbook">Events</a>
