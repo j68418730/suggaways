@@ -381,6 +381,27 @@ function cart_items(): array
     return $items;
 }
 
+function add_membership_to_cart(int $planId, int $quantity = 1): void
+{
+    $stmt = db()->prepare('SELECT * FROM membership_plans WHERE id = ? AND is_active = 1');
+    $stmt->execute([$planId]);
+    $plan = $stmt->fetch();
+    if (!$plan) return;
+    $idx = "membership-{$planId}";
+    if (isset($_SESSION['cart'][$idx])) {
+        $_SESSION['cart'][$idx]['quantity'] += $quantity;
+    } else {
+        $_SESSION['cart'][$idx] = [
+            'membership_id' => $planId,
+            'name' => $plan['name'] . ' Membership',
+            'price' => (float)$plan['price'],
+            'quantity' => $quantity,
+            'image' => '/assets/img/background.png',
+            'is_membership' => true,
+        ];
+    }
+}
+
 function add_preorder_to_cart(int $comingSoonId, int $quantity = 1): void
 {
     $idx = "preorder-{$comingSoonId}";
