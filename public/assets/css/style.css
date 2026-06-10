@@ -479,7 +479,7 @@ textarea { min-height: 110px; resize: vertical; }
 
 /* Admin */
 .admin-layout { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
-.admin-sidebar { position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow-y: auto; }
+.admin-sidebar { position: sticky; top: 24px; }
 .admin-nav { display: flex; flex-direction: column; gap: 4px; margin-top: 16px; }
 .admin-nav a {
   padding: 8px 12px;
