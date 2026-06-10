@@ -1614,8 +1614,8 @@ function render_webmaster_page(?array $webmaster): string
         <p class="hint">Site administrator and developer.</p>
       </div>
     </section>
-    <section class="container" style="margin-top:24px;max-width:500px">
-      <div class="panel" style="text-align:center;padding:32px">
+    <section class="container" style="margin-top:24px;display:flex;justify-content:center">
+      <div class="panel" style="text-align:center;padding:32px;max-width:450px;width:100%">
         <?php if ($webmaster && !empty($webmaster['avatar'])): ?>
           <img src="<?= e($webmaster['avatar']) ?>" alt="Avatar" style="width:120px;height:120px;border-radius:50%;object-fit:cover;border:2px solid var(--line);margin-bottom:16px">
         <?php else: ?>
