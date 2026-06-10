@@ -201,8 +201,11 @@ function render_shop(array $products, array $categories, ?string $currentCategor
         <h2>Choose Your Plan</h2>
       </section>
       <section class="product-grid">
-        <?php foreach ($membershipPlans as $plan): $benefits = json_decode($plan['benefits'] ?? '[]', true); ?>
+        <?php foreach ($membershipPlans as $plan): $benefits = json_decode($plan['benefits'] ?? '[]', true);
+          $isTestPlan = stripos($plan['name'], 'test') !== false;
+        ?>
           <div class="panel product-card" style="text-align:center;padding:24px 16px">
+            <?php if ($isTestPlan): ?><span class="badge" style="background:var(--orange);margin-bottom:8px">🔑 Requires Code: DEV</span><?php endif; ?>
             <h3 style="font-size:18px;margin-bottom:8px"><?= e($plan['name']) ?></h3>
             <p style="font-size:32px;font-weight:800;color:var(--cyan);margin:12px 0">$<?= e(number_format((float)$plan['price'], 2)) ?><span style="font-size:13px;color:var(--muted)">/month</span></p>
             <p style="font-size:12px;color:var(--muted);margin-bottom:12px"><?= e($plan['description'] ?? '') ?></p>
@@ -211,15 +214,25 @@ function render_shop(array $products, array $categories, ?string $currentCategor
                 <li style="padding:3px 0;font-size:12px">✅ <?= e($b) ?></li>
               <?php endforeach; ?>
             </ul>
-            <form method="post" action="/?page=membership">
-              <?= csrf_field() ?>
-              <input type="hidden" name="action" value="join_membership">
-              <input type="hidden" name="plan_id" value="<?= (int)$plan['id'] ?>">
-              <button class="button primary" type="submit" style="width:100%">Join Now — $<?= e(number_format((float)$plan['price'], 2)) ?>/mo</button>
-              <label style="display:flex;align-items:center;gap:6px;justify-content:center;margin-top:8px;font-size:11px;color:var(--muted);cursor:pointer">
-                <input type="checkbox" name="auto_pay" value="1" checked> Auto-pay monthly
-              </label>
-            </form>
+            <?php if ($isTestPlan): ?>
+              <form method="post">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="add_membership_to_cart">
+                <input type="hidden" name="plan_id" value="<?= (int)$plan['id'] ?>">
+                <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:6px">Enter DEV code to purchase</label>
+                <div style="display:flex;gap:4px">
+                  <input name="dev_code" placeholder="DEV code" style="flex:1;padding:8px;font-size:12px">
+                  <button class="button primary" type="submit" style="padding:8px 14px;min-height:auto;font-size:11px">Verify & Add</button>
+                </div>
+              </form>
+            <?php else: ?>
+              <form method="post">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="add_membership_to_cart">
+                <input type="hidden" name="plan_id" value="<?= (int)$plan['id'] ?>">
+                <button class="button primary" type="submit" style="width:100%">Add to Cart — $<?= e(number_format((float)$plan['price'], 2)) ?>/mo</button>
+              </form>
+            <?php endif; ?>
           </div>
         <?php endforeach; ?>
       </section>
@@ -685,6 +698,19 @@ function render_register(): string
         <label>Full Name<input name="full_name" required></label>
         <label>Username<input name="username" required autocomplete="username"></label>
         <label>Email<input name="email" type="email" required autocomplete="email"></label>
+        <label>Phone<input name="phone" type="tel" placeholder="(555) 000-0000"></label>
+        <div class="form-row">
+          <label>Street Address<input name="street" placeholder="123 Main St"></label>
+          <label>Apt/Suite<input name="street2" placeholder="Apt 4B"></label>
+        </div>
+        <div class="form-row">
+          <label>City<input name="city" required></label>
+          <label>State<input name="state" required></label>
+        </div>
+        <div class="form-row">
+          <label>ZIP Code<input name="zip" required></label>
+          <label>Country<input name="country" value="United States"></label>
+        </div>
         <label>Password<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
         <label>Confirm Password<input name="password_confirm" type="password" required></label>
         <p class="hint">By registering, you agree to our <a href="/?page=terms">Terms</a> and <a href="/?page=privacy">Privacy Policy</a>.</p>
@@ -712,7 +738,7 @@ function render_forgot_password(): string
     return ob_get_clean();
 }
 
-function render_cart(array $items, float $subtotal, float $discount, ?string $couponCode, array $shippingMethods): string
+function render_cart(array $items, float $subtotal, float $discount, ?string $couponCode, array $shippingMethods, bool $isMember = false): string
 {
     $taxRate = config('app.tax_rate', 8.25);
     $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
@@ -770,7 +796,9 @@ function render_cart(array $items, float $subtotal, float $discount, ?string $co
           <h3>Order Summary</h3>
           <div class="summary-row"><span>Subtotal</span><span>$<?= e(number_format($subtotal, 2)) ?></span></div>
           <?php if ($discount > 0): ?>
-            <div class="summary-row discount"><span>Discount (<?= e($couponCode) ?>)</span><span>-$<?= e(number_format($discount, 2)) ?></span></div>
+            <div class="summary-row discount"><span><?= $isMember && $subtotal >= 75 ? '🔥 Member 15% off' : 'Discount' ?><?= $couponCode ? ' ('.e($couponCode).')' : '' ?></span><span>-$<?= e(number_format($discount, 2)) ?></span></div>
+          <?php elseif ($isMember && $subtotal >= 75): ?>
+            <div class="summary-row discount"><span>🔥 Member 15% off</span><span>-$<?= e(number_format(round($subtotal*0.15,2), 2)) ?></span></div>
           <?php endif; ?>
           <div class="summary-row"><span>Tax (<?= e((string)$taxRate) ?>%)</span><span>$<?= e(number_format($tax, 2)) ?></span></div>
           <div class="summary-row"><span>Shipping</span><span><?= $shipping == 0 ? 'FREE' : '$' . e(number_format((float)$shipping, 2)) ?></span></div>
@@ -1034,7 +1062,7 @@ function render_order_confirmed(array $order, array $items): string
     return ob_get_clean();
 }
 
-function render_account_dashboard(array $user, string $tab, array $recentOrders, array $allOrders, array $addresses, array $wishlist, array $devices, array $notifications): string
+function render_account_dashboard(array $user, string $tab, array $recentOrders, array $allOrders, array $addresses, array $wishlist, array $devices, array $notifications, ?array $userMembership = null): string
 {
     ob_start(); ?>
     <div class="account-layout">
@@ -1049,6 +1077,12 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
             <h3><?= e($user['full_name'] ?: $user['username']) ?></h3>
             <p class="hint"><?= e($user['email']) ?></p>
             <span class="badge"><?= e(ucfirst($user['role'])) ?></span>
+            <?php if ($userMembership): ?>
+              <div style="margin-top:8px;padding:8px;background:rgba(0,200,255,0.08);border:1px solid rgba(0,200,255,0.2);border-radius:6px;font-size:11px;text-align:center">
+                <strong style="color:var(--cyan)">🔥 Sugga Gang Member</strong>
+                <p style="font-size:10px;color:var(--text2);margin:4px 0"><?= e($userMembership['plan_name']) ?> · $<?= e(number_format((float)$userMembership['price'],2)) ?>/mo</p>
+              </div>
+            <?php endif; ?>
           </div>
           <nav class="account-nav">
             <a href="/?page=account&tab=dashboard" class="<?= $tab === 'dashboard' ? 'active' : '' ?>">Dashboard</a>
