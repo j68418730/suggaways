@@ -125,7 +125,7 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
           <a href="/?page=blog">📝 Blog</a>
           <a href="/?page=terms">📜 Terms</a>
           <a href="/?page=privacy">🔒 Privacy</a>
-          <a href="/?page=account">👤 Webmaster</a>
+          <a href="/?page=account&tab=profile">👤 Webmaster</a>
         </div>
         <div class="footer-col">
           <h4>Stay in the Loop</h4>
