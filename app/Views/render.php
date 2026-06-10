@@ -1175,10 +1175,19 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
                 <label style="display:block;font-size:13px;cursor:pointer;color:var(--accent)">Change Photo<input name="avatar" type="file" accept="image/*" style="display:none" onchange="this.closest('form').querySelector('.avatar-name').textContent=this.files[0].name"></label>
                 <span class="avatar-name hint" style="font-size:11px"></span>
               </div>
-              <label>Username<input value="<?= e($user['username']) ?>" disabled><span class="hint">Username cannot be changed</span></label>
+              <label>Username<input name="username" value="<?= e($user['username']) ?>" disabled><span class="hint">Username cannot be changed</span></label>
               <label>Full Name<input name="full_name" value="<?= e($user['full_name'] ?? '') ?>" required></label>
-              <label>Email<input value="<?= e($user['email']) ?>" disabled><span class="hint">Email cannot be changed</span></label>
+              <label>Email<input name="email" type="email" value="<?= e($user['email']) ?>" required></label>
               <label>Phone<input name="phone" value="<?= e($user['phone'] ?? '') ?>"></label>
+              <label>Street Address<input name="street" value="<?= e($user['street'] ?? '') ?>"></label>
+              <div class="form-row">
+                <label>City<input name="city" value="<?= e($user['city'] ?? '') ?>"></label>
+                <label>State<input name="state" value="<?= e($user['state'] ?? '') ?>"></label>
+              </div>
+              <div class="form-row">
+                <label>ZIP Code<input name="zip" value="<?= e($user['zip'] ?? '') ?>"></label>
+                <label>Country<input name="country" value="<?= e($user['country'] ?? 'United States') ?>"></label>
+              </div>
               <label>Bio<textarea name="bio" placeholder="Tell us about yourself..."><?= e($user['bio'] ?? '') ?></textarea></label>
               <button class="button primary" type="submit">Save Changes</button>
             </form>
