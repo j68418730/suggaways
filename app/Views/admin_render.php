@@ -81,57 +81,58 @@ function render_admin_dashboard(
       </div>
     <?php endif; ?>
     <div class="admin-layout">
-      <div class="admin-sidebar panel" style="padding:0;overflow:hidden">
-        <div style="padding:14px 16px;border-bottom:1px solid var(--line-soft)"><strong>Webmaster v2</strong><br><span style="font-size:11px;color:var(--text2)"><?= e($user['full_name'] ?: $user['username']) ?></span></div>
-        <nav class="admin-nav" id="adminNav">
-          <?php $navSections = [
-            'dashboard' => ['icon'=>'📊','label'=>'Dashboard','items'=>['dashboard'=>'Dashboard']],
-            'store' => ['icon'=>'🛍️','label'=>'Store Management','sub'=>'Product Management','items'=>['products'=>'Products','categories'=>'Categories','comingsoon'=>'Coming Soon','inventory'=>'Inventory','reorder'=>'Reorder','sizecharts'=>'Size Charts']],
-            'sales' => ['icon'=>'','label'=>'Sales & Orders','items'=>['orders'=>'Orders','customers'=>'Customers','coupons'=>'Coupons','pos'=>'POS Drawer','payments'=>'Payments','shipping'=>'Shipping']],
-            'users' => ['icon'=>'👥','label'=>'User Management','sub'=>'Staff & Members','items'=>['employees'=>'Employees','memberships'=>'Members','signins'=>'Sign-ins','audit'=>'Audit Log']],
-            'comm' => ['icon'=>'📨','label'=>'Communication','sub'=>'Messaging & Marketing','items'=>['inbox'=>'Inbox','newsletter'=>'Newsletter','contact'=>'Contact']],
-            'content' => ['icon'=>'📝','label'=>'Content Management','sub'=>'Website Content','items'=>['pages'=>'Pages','blog'=>'Blog','events'=>'Events']],
-            'tools' => ['icon'=>'🔧','label'=>'Productivity & Support','sub'=>'Internal Tools','items'=>['todos'=>'Todo Board','bugreports'=>'Bug Reports']],
-            'system' => ['icon'=>'🔐','label'=>'System Management','sub'=>'Security & Settings','items'=>['settings'=>'Settings','security'=>'Security']],
+      <div class="admin-topbar">
+        <div style="display:flex;align-items:center;gap:2px">
+          <span style="font-size:13px;font-weight:800;color:var(--cyan);padding:4px 12px 4px 4px;white-space:nowrap;letter-spacing:1px">⚙️ WEBMASTER</span>
+          <?php
+          $navSections = [
+            'store' => ['icon'=>'📦','label'=>'Store','items'=>['products'=>'Products','categories'=>'Categories','comingsoon'=>'Coming Soon','inventory'=>'Inventory','reorder'=>'Reorder','sizecharts'=>'Size Charts']],
+            'sales' => ['icon'=>'📋','label'=>'Sales','items'=>['orders'=>'Orders','customers'=>'Customers','coupons'=>'Coupons','pos'=>'POS Drawer','payments'=>'Payments','shipping'=>'Shipping']],
+            'users' => ['icon'=>'👥','label'=>'Staff','items'=>['employees'=>'Employees','memberships'=>'Members','signins'=>'Sign-ins','audit'=>'Audit Log']],
+            'comm' => ['icon'=>'📧','label'=>'Mail','items'=>['inbox'=>'Inbox','newsletter'=>'Newsletter','contact'=>'Contact']],
+            'content' => ['icon'=>'📝','label'=>'Content','items'=>['pages'=>'Pages','blog'=>'Blog','events'=>'Events']],
+            'tools' => ['icon'=>'🔧','label'=>'Tools','items'=>['todos'=>'Todo Board','bugreports'=>'Bug Reports']],
+            'system' => ['icon'=>'⚙️','label'=>'System','items'=>['settings'=>'Settings','security'=>'Security']],
           ];
-          $labels = ['dashboard'=>'📊 Dashboard','products'=>'Products','categories'=>'Categories','comingsoon'=>'Coming Soon','orders'=>'Orders','customers'=>'Customers','coupons'=>'Coupons','pos'=>'POS Drawer','payments'=>'Payments','shipping'=>'Shipping','inventory'=>'Inventory','reorder'=>'Reorder','sizecharts'=>'Size Charts','employees'=>'Employees','memberships'=>'Members','signins'=>'Sign-ins','audit'=>'Audit Log','inbox'=>'Inbox','newsletter'=>'Newsletter','contact'=>'Contact','pages'=>'Pages','blog'=>'Blog','events'=>'Events','todos'=>'Todo Board','bugreports'=>'Bug Reports','settings'=>'Settings','security'=>'Security'];
           foreach ($navSections as $sk => $sec):
-            $hasSub = !empty($sec['sub']);
-            $secActive = isset($sec['items'][$effectiveTab]);
+            $secActive = false;
+            foreach ($sec['items'] as $tk => $tl) { if ($effectiveTab === $tk) { $secActive = true; break; } }
           ?>
-            <div class="nav-section">
-              <div class="ns-header <?= $secActive ? 'active' : '' ?>" onclick="<?= $hasSub ? 'toggleNS(\''.$sk.'\')' : "window.location='/?page=admin&tab=dashboard'" ?>">
-                <span><span class="ns-icon"><?= $sec['icon'] ?: '📋' ?></span> <?= $sec['label'] ?></span>
-                <?php if ($hasSub): ?><span class="ns-arrow" id="nsa_<?= $sk ?>">▼</span><?php endif; ?>
+            <div class="admin-dropdown">
+              <button class="admin-nav-link <?= $secActive ? 'active' : '' ?>" onclick="toggleDrop('<?= $sk ?>')">
+                <?= $sec['icon'] ?> <?= $sec['label'] ?> <span class="drop-arrow" id="da_<?= $sk ?>">▾</span>
+              </button>
+              <div class="admin-dropdown-menu" id="dm_<?= $sk ?>">
+                <?php foreach ($sec['items'] as $tk => $tl):
+                  $superOnly = in_array($tk, ['inbox','memberships','todos','security'], true);
+                  if ($superOnly && !$isSuperAdmin) continue;
+                ?>
+                  <a href="/?page=admin&tab=<?= $tk ?>" class="<?= $effectiveTab === $tk ? 'active' : '' ?>"><?= $tl ?></a>
+                <?php endforeach; ?>
               </div>
-              <?php if ($hasSub): ?>
-                <div class="ns-sub" id="ns_<?= $sk ?>">
-                  <div class="ns-sub-label"><?= $sec['sub'] ?></div>
-                  <?php foreach ($sec['items'] as $tk => $tl):
-                    $superOnly = in_array($tk, ['inbox','memberships','todos','security'], true);
-                    if ($superOnly && !$isSuperAdmin) continue;
-                  ?>
-                    <a href="/?page=admin&tab=<?= $tk ?>" class="<?= $effectiveTab === $tk ? 'active' : '' ?>"><?= $tl ?></a>
-                  <?php endforeach; ?>
-                </div>
-              <?php endif; ?>
             </div>
           <?php endforeach; ?>
-        </nav>
+          <span class="admin-user-badge" style="margin-left:auto">
+            👤 <?= e($user['full_name'] ?: $user['username']) ?>
+            <span style="font-size:9px;padding:1px 6px;border-radius:8px;background:<?= $isSuperAdmin ? 'rgba(0,200,255,0.2)' : 'rgba(255,170,51,0.2)' ?>;color:<?= $isSuperAdmin ? 'var(--cyan)' : 'var(--orange)' ?>"><?= e(ucfirst($user['role'] ?? '')) ?></span>
+          </span>
+        </div>
       </div>
       <script>
-      function toggleNS(id) {
-        var el = document.getElementById('ns_' + id);
-        var ar = document.getElementById('nsa_' + id);
-        if (!el) return;
-        if (el.style.display === 'block') {
-          el.style.display = 'none';
-          if (ar) ar.style.transform = 'rotate(0deg)';
-        } else {
-          el.style.display = 'block';
-          if (ar) ar.style.transform = 'rotate(180deg)';
-        }
+      function toggleDrop(id) {
+        document.querySelectorAll('.admin-dropdown-menu').forEach(function(m) { if (m.id !== 'dm_' + id) m.style.display = 'none'; });
+        document.querySelectorAll('.drop-arrow').forEach(function(a) { a.style.transform = ''; });
+        var el = document.getElementById('dm_' + id);
+        var ar = document.getElementById('da_' + id);
+        if (el && el.style.display === 'block') { el.style.display = 'none'; if (ar) ar.style.transform = ''; }
+        else if (el) { el.style.display = 'block'; if (ar) ar.style.transform = 'rotate(180deg)'; }
       }
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.admin-dropdown')) {
+          document.querySelectorAll('.admin-dropdown-menu').forEach(function(m) { m.style.display = 'none'; });
+          document.querySelectorAll('.drop-arrow').forEach(function(a) { a.style.transform = ''; });
+        }
+      });
       </script>
 
 
