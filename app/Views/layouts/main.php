@@ -105,26 +105,26 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
         </div>
         <div class="footer-col">
           <h4>Shop</h4>
-          <a href="/?page=shop">All Products</a>
+          <a href="/?page=shop">🛒 All Products</a>
           <a href="/?page=shop&category=sugga-gang-member">🔥 Join Sugga Gang</a>
-          <a href="/?page=collections">Collections</a>
-          <a href="/?page=new-drops">New Drops</a>
-          <a href="/?page=lookbook">Events</a>
+          <a href="/?page=collections">📦 Collections</a>
+          <a href="/?page=new-drops">🔥 New Drops</a>
+          <a href="/?page=lookbook">📸 Events</a>
         </div>
         <div class="footer-col">
           <h4>Customer Care</h4>
-          <a href="/?page=contact">Contact</a>
-          <a href="/?page=shipping">Shipping</a>
-          <a href="/?page=returns">Returns</a>
-          <a href="/?page=size-guide">Size Guide</a>
-          <a href="/?page=bug-report">Report a Bug</a>
+          <a href="/?page=contact">📧 Contact</a>
+          <a href="/?page=shipping">🚚 Shipping</a>
+          <a href="/?page=returns">↩ Returns</a>
+          <a href="/?page=size-guide">📏 Size Guide</a>
+          <a href="/?page=bug-report">🐛 Report a Bug</a>
         </div>
         <div class="footer-col">
           <h4>Company</h4>
-          <a href="/?page=about">About</a>
-          <a href="/?page=blog">Blog</a>
-          <a href="/?page=terms">Terms</a>
-          <a href="/?page=privacy">Privacy</a>
+          <a href="/?page=about">ℹ️ About</a>
+          <a href="/?page=blog">📝 Blog</a>
+          <a href="/?page=terms">📜 Terms</a>
+          <a href="/?page=privacy">🔒 Privacy</a>
           <a href="/?page=account">👤 Webmaster</a>
         </div>
         <div class="footer-col">
