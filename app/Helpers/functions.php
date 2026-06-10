@@ -544,13 +544,16 @@ function validate_uploaded_image(array $file): ?string
 {
     if (empty($file['tmp_name']) || $file['error'] !== UPLOAD_ERR_OK) return null;
     $allowedExts = ['jpg','jpeg','png','gif','webp'];
-    $allowedMimes = ['image/jpeg','image/png','image/gif','image/webp'];
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-    $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
-    if (!in_array($ext, $allowedExts) || !in_array($mime, $allowedMimes)) return null;
-    // Reject files over 5MB
+    if (!in_array($ext, $allowedExts)) return null;
+    // Verify MIME type if fileinfo is available
+    if (function_exists('finfo_open')) {
+        $allowedMimes = ['image/jpeg','image/png','image/gif','image/webp'];
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = finfo_file($finfo, $file['tmp_name']);
+        finfo_close($finfo);
+        if (!in_array($mime, $allowedMimes)) return null;
+    }
     if ($file['size'] > 5 * 1024 * 1024) return null;
     return $ext;
 }
