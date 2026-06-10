@@ -148,6 +148,7 @@ function render_admin_dashboard(
     </div>
     <?php endif; ?>
     <?php
+    return ob_get_clean();
 }
 
 function admin_email_settings_modal(): void
