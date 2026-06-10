@@ -203,7 +203,6 @@ function render_shop(array $products, array $categories, ?string $currentCategor
       <section class="product-grid">
         <?php foreach ($membershipPlans as $plan): $benefits = json_decode($plan['benefits'] ?? '[]', true); $isTestPlan = stripos($plan['name'], 'test') !== false; ?>
           <div class="panel product-card" style="text-align:center;padding:24px 16px">
-            <?php if ($isTestPlan): ?><span class="badge" style="background:var(--orange);margin-bottom:8px">🔑 Requires Code: DEV</span><?php endif; ?>
             <h3 style="font-size:18px;margin-bottom:8px"><?= e($plan['name']) ?></h3>
             <p style="font-size:32px;font-weight:800;color:var(--cyan);margin:12px 0">$<?= e(number_format((float)$plan['price'], 2)) ?><span style="font-size:13px;color:var(--muted)">/month</span></p>
             <p style="font-size:12px;color:var(--muted);margin-bottom:12px"><?= e($plan['description'] ?? '') ?></p>
