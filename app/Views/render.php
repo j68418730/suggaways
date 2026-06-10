@@ -1604,3 +1604,30 @@ function render_size_guide(?array $page, array $sizeCharts): string
     <?php
     return ob_get_clean();
 }
+
+function render_webmaster_page(?array $webmaster): string
+{
+    ob_start(); ?>
+    <section class="page-title">
+      <div class="container">
+        <h1>👤 Webmaster</h1>
+        <p class="hint">Site administrator and developer.</p>
+      </div>
+    </section>
+    <section class="container" style="margin-top:24px;max-width:500px">
+      <div class="panel" style="text-align:center;padding:32px">
+        <?php if ($webmaster && !empty($webmaster['avatar'])): ?>
+          <img src="<?= e($webmaster['avatar']) ?>" alt="Avatar" style="width:120px;height:120px;border-radius:50%;object-fit:cover;border:2px solid var(--line);margin-bottom:16px">
+        <?php else: ?>
+          <div class="avatar-placeholder" style="width:120px;height:120px;font-size:42px;margin:0 auto 16px;border-radius:50%">WM</div>
+        <?php endif; ?>
+        <h2><?= e($webmaster['full_name'] ?? 'SUGGAWAYZ Webmaster') ?></h2>
+        <p class="hint" style="margin:4px 0 16px"><?= e($webmaster['username'] ?? '') ?></p>
+        <p style="font-size:13px;color:var(--muted);line-height:1.6"><?= e($webmaster['bio'] ?? 'Site administrator for SUGGAWAYZ. Contact us for any inquiries.') ?></p>
+        <hr style="border-color:var(--line-soft);margin:20px 0">
+        <p style="font-size:12px;color:var(--muted)">📧 <a href="mailto:admin@suggawayz.com" style="color:var(--cyan)">admin@suggawayz.com</a></p>
+      </div>
+    </section>
+    <?php
+    return ob_get_clean();
+}

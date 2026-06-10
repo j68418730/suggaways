@@ -10,7 +10,7 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
 header("Content-Security-Policy: default-src 'self'; script-src 'self' https://www.paypal.com https://www.paypalobjects.com https://api.qrserver.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; img-src 'self' data: https://api.qrserver.com https://cash.app; font-src 'self' https://fonts.gstatic.com; frame-src 'self' https://www.paypal.com; connect-src 'self' https://api-m.sandbox.paypal.com");
 header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
 
-$page = $_GET['page'] ?? ($_GET['role'] === 'webmaster' ? 'webmaster' : 'home');
+$page = $_GET['page'] ?? (isset($_GET['role']) && $_GET['role'] === 'webmaster' ? 'webmaster' : 'home');
 $action = $_POST['action'] ?? null;
 $user = current_user();
 
