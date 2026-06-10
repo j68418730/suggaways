@@ -242,6 +242,15 @@ function decrypt_value(string $encoded): string
     return openssl_decrypt($encrypted, 'aes-256-cbc', hex2bin($key), OPENSSL_RAW_DATA, $iv) ?: '';
 }
 
+function get_member_discount(int $userId, float $subtotal): float
+{
+    if ($subtotal < 75) return 0;
+    $mem = db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active' LIMIT 1");
+    $mem->execute([$userId]);
+    if (!$mem->fetch()) return 0;
+    return round($subtotal * 0.15, 2);
+}
+
 function set_site_setting(string $key, string $value): void
 {
     db()->prepare('INSERT INTO site_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?')

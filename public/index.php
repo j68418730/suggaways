@@ -215,11 +215,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute($params);
                 $orderId = (int)db()->lastInsertId();
 
-                foreach ($items as $item) {
+                foreach ($items as $key => $item) {
                     if (!empty($item['is_preorder'])) continue;
+                    if (!empty($item['is_membership'])) {
+                        // Create membership record
+                        $existingMem = db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active'");
+                        $existingMem->execute([(int)$user['id']]);
+                        if (!$existingMem->fetch()) {
+                            db()->prepare("INSERT INTO user_memberships (user_id, plan_id, status, auto_pay, start_date, end_date) VALUES (?,?,'active',0,NOW(),DATE_ADD(NOW(), INTERVAL 1 MONTH))")
+                                ->execute([(int)$user['id'], $item['membership_id']]);
+                            $invNum = 'INV-MEM-' . time() . '-' . $user['id'];
+                            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'paid',DATE_ADD(NOW(), INTERVAL 1 MONTH))")
+                                ->execute([(int)$user['id'], $invNum, $item['price']]);
+                        }
+                        continue;
+                    }
                     db()->prepare('INSERT INTO order_items (order_id, product_id, product_name, sku, size, color, quantity, unit_price, line_total, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
                         ->execute([
-                            $orderId, $item['product_id'], $item['name'],
+                            $orderId, $item['product_id'] ?? 0, $item['name'],
                             '', $item['size'] ?? null, $item['color'] ?? null,
                             $item['quantity'], $item['price'], $item['price'] * $item['quantity'],
                             $item['image'] ?? null
@@ -1525,6 +1538,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             redirect('/?page=admin&tab=security');
 
+        case 'add_membership_to_cart':
+            if (!$user) { session_flash('error', 'Please log in.'); redirect('/?page=login'); }
+            $planId = (int)($_POST['plan_id'] ?? 0);
+            add_membership_to_cart($planId);
+            session_flash('notice', 'Membership added to cart.');
+            redirect('/?page=cart');
+
         case 'join_membership':
             if (!$user) { session_flash('error', 'Please log in to join.'); redirect('/?page=login'); }
             $planId = (int)($_POST['plan_id'] ?? 0);
@@ -1631,8 +1651,17 @@ switch ($page) {
         $seo_title = $seo_settings['meta_title'] ?? null;
         $seo_description = $seo_settings['meta_description'] ?? null;
         $hero_class = 'hero-shop';
-        $hero_content = '<p class="eyebrow">The Collection</p><h1>Shop All</h1><p>Explore the latest drops and classic essentials.</p>';
-        $content = render_shop($allProducts, $categories, $categorySlug, $sort, $search, $page, $totalPages);
+
+        // Fetch membership plans for Sugga Gang category
+        $membershipPlans = [];
+        if ($categorySlug === 'sugga-gang-member') {
+            $membershipPlans = db()->query('SELECT * FROM membership_plans WHERE is_active=1 ORDER BY price')->fetchAll();
+            $hero_content = '<p class="eyebrow">Sugga Gang</p><h1>🔥 Join the Sugga Gang</h1><p>Get early access, exclusive gear, and monthly perks.</p>';
+        } else {
+            $hero_content = '<p class="eyebrow">The Collection</p><h1>Shop All</h1><p>Explore the latest drops and classic essentials.</p>';
+        }
+
+        $content = render_shop($allProducts, $categories, $categorySlug, $sort, $search, $page, $totalPages, $membershipPlans);
         break;
 
     case 'product':
