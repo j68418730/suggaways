@@ -148,7 +148,78 @@ function render_admin_dashboard(
     </div>
     <?php endif; ?>
     <?php
-    return ob_get_clean();
+}
+
+function admin_email_settings_modal(): void
+{
+    ?>
+    <div id="emailSettingsModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)this.style.display='none'">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;padding:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h2 id="esEmail" style="font-size:16px;margin:0"></h2>
+          <button style="background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer" onclick="document.getElementById('emailSettingsModal').style.display='none'">✕</button>
+        </div>
+        <form method="post"><?= csrf_field() ?>
+          <input type="hidden" name="action" value="admin_change_email_password">
+          <input type="hidden" name="email" id="esEmailInput" value="">
+          <input type="hidden" name="subtab" value="accounts">
+          <h3 style="font-size:13px;margin-bottom:8px">🔑 Change Password</h3>
+          <div style="display:flex;gap:4px;margin-bottom:16px">
+            <input name="new_password" type="password" placeholder="New password" style="flex:1;padding:6px;font-size:12px" required minlength="6">
+            <button class="button primary" type="submit" style="padding:4px 12px;min-height:auto;font-size:11px">Set Password</button>
+          </div>
+        </form>
+        <hr style="border-color:var(--border);margin:16px 0">
+        <h3 style="font-size:13px;margin-bottom:8px">📧 Email Forwarding</h3>
+        <form method="post"><?= csrf_field() ?>
+          <input type="hidden" name="action" value="admin_set_email_forward">
+          <input type="hidden" name="email" id="esEmailInput2" value="">
+          <div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">
+            <input name="forward_to" type="email" placeholder="forward@example.com" style="flex:1;padding:6px;font-size:12px">
+            <button class="button" type="submit" style="padding:4px 12px;min-height:auto;font-size:11px">Add Forward</button>
+          </div>
+          <ul id="esForwardList" style="font-size:12px;list-style:none;padding:0"></ul>
+        </form>
+        <hr style="border-color:var(--border);margin:16px 0">
+        <h3 style="font-size:13px;margin-bottom:8px">✉️ SMTP Settings (for this email)</h3>
+        <p class="hint" style="font-size:11px;margin-bottom:8px">Use these settings in your email client (Outlook, Thunderbird, etc.)</p>
+        <div style="font-size:12px;line-height:1.8">
+          <p><strong>IMAP Server:</strong> <code id="esImapHost">mail.suggawayz.com</code></p>
+          <p><strong>IMAP Port:</strong> <code>993</code> (SSL) or <code>143</code> (STARTTLS)</p>
+          <p><strong>SMTP Server:</strong> <code id="esSmtpHost">mail.suggawayz.com</code></p>
+          <p><strong>SMTP Port:</strong> <code>587</code> (TLS)</p>
+          <p><strong>Username:</strong> <code id="esFullEmail"></code></p>
+          <p><strong>Password:</strong> Your email password</p>
+        </div>
+      </div>
+    </div>
+    <script>
+    function showEmailSettings(email) {
+      document.getElementById('esEmail').textContent = '⚙️ ' + email;
+      document.getElementById('esEmailInput').value = email;
+      document.getElementById('esEmailInput2').value = email;
+      document.getElementById('esFullEmail').textContent = email;
+      document.getElementById('emailSettingsModal').style.display = 'flex';
+      // Load forwarders
+      fetch('/?action=admin_get_email_forwards&email=' + encodeURIComponent(email) + '&_=' + Date.now())
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          var list = document.getElementById('esForwardList');
+          list.innerHTML = '';
+          if (data && data.length) {
+            data.forEach(function(f){
+              var li = document.createElement('li');
+              li.style.cssText = 'padding:4px 0;display:flex;justify-content:space-between';
+              li.innerHTML = '<span>→ ' + f.dest_email + '</span><form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_email_forward"><input type="hidden" name="id" value="' + f.id + '"><input type="hidden" name="email" value="' + email + '"><button class="button" type="submit" style="padding:2px 6px;font-size:10px;border-color:rgba(255,76,76,0.5)">✕</button></form>';
+              list.appendChild(li);
+            });
+          } else {
+            list.innerHTML = '<li style="color:var(--text2)">No forwards set up.</li>';
+          }
+        });
+    }
+    </script>
+    <?php
 }
 
 function admin_dashboard(array $stats, array $orders, array $lowStock, array $products, array $customers): void
@@ -2807,8 +2878,10 @@ function admin_inbox(array $user): void
             <table class="table" style="font-size:13px"><tr><th>Email</th><th>Name</th><th>Status</th><th>Actions</th></tr>
             <?php foreach ($allMailboxes as $m): ?>
               <tr><td><a href="/?page=admin&tab=inbox&subtab=inbox&mailbox=<?= e($m['username']) ?>"><?= e($m['username']) ?></a></td><td><?= e($m['full_name'] ?: '—') ?></td><td><span class="badge" style="background:var(--green)">Active</span></td>
-                <td><form method="post" style="display:inline" onsubmit="return confirm('Delete?')"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_email"><input type="hidden" name="email" value="<?= e($m['username']) ?>"><button class="button" type="submit" style="padding:2px 6px;font-size:10px">Del</button></form>
-                <form method="post" style="display:inline-flex;gap:4px"><?= csrf_field() ?><input type="hidden" name="action" value="admin_change_email_password"><input type="hidden" name="email" value="<?= e($m['username']) ?>"><input name="new_password" type="password" placeholder="PW" style="width:60px;padding:2px 4px;font-size:10px"><button class="button" type="submit" style="padding:2px 6px;font-size:10px">Set</button></form></td>
+                <td style="white-space:nowrap">
+                  <button class="button" type="button" style="padding:2px 6px;font-size:10px" onclick="showEmailSettings('<?= e($m['username']) ?>')">⚙️</button>
+                  <form method="post" style="display:inline" onsubmit="return confirm('Delete?')"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_email"><input type="hidden" name="email" value="<?= e($m['username']) ?>"><button class="button" type="submit" style="padding:2px 6px;font-size:10px">Del</button></form>
+                </td>
               </tr>
             <?php endforeach; ?>
             </table>
