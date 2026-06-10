@@ -41,6 +41,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $password = (string)$_POST['password'];
             $confirm = (string)$_POST['password_confirm'];
             $fullName = trim((string)$_POST['full_name']);
+            $phone = trim((string)$_POST['phone'] ?? '');
+            $street = trim((string)$_POST['street'] ?? '');
+            $street2 = trim((string)$_POST['street2'] ?? '');
+            $city = trim((string)$_POST['city'] ?? '');
+            $state = trim((string)$_POST['state'] ?? '');
+            $zip = trim((string)$_POST['zip'] ?? '');
+            $country = trim((string)$_POST['country'] ?? 'United States');
 
             if ($password !== $confirm) {
                 session_flash('error', 'Passwords do not match.');
@@ -59,9 +66,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $hash = password_hash($password, PASSWORD_ARGON2ID);
-            $stmt = db()->prepare('INSERT INTO users (role, username, email, password_hash, full_name) VALUES (?, ?, ?, ?, ?)');
-            $stmt->execute(['customer', $username, $email, $hash, $fullName]);
+            $stmt = db()->prepare('INSERT INTO users (role, username, email, password_hash, full_name, phone) VALUES (?, ?, ?, ?, ?, ?)');
+            $stmt->execute(['customer', $username, $email, $hash, $fullName, $phone ?: null]);
             $userId = (int)db()->lastInsertId();
+
+            // Create default shipping address
+            if ($street) {
+                db()->prepare('INSERT INTO addresses (user_id, label, full_name, street_line1, street_line2, city, state, postal_code, country, is_default_shipping) VALUES (?,?,?,?,?,?,?,?,?,1)')
+                    ->execute([$userId, 'Home', $fullName, $street, $street2 ?: null, $city, $state, $zip, $country]);
+            }
 
             $verifyToken = bin2hex(random_bytes(32));
             db()->prepare('INSERT INTO email_verifications (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))')
@@ -176,6 +189,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     db()->prepare('UPDATE coupons SET used_count = used_count + 1 WHERE code = ?')->execute([$couponCode]);
                 }
             }
+
+            // Member 15% discount
+            $memberDiscount = $user ? get_member_discount((int)$user['id'], $subtotal) : 0;
+            $discount = max($discount, $memberDiscount);
 
             $taxRate = config('app.tax_rate', 8.25);
             $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
@@ -367,7 +384,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
-            db()->prepare('UPDATE users SET full_name = ?, phone = ?, bio = ?, avatar = ? WHERE id = ?')
+            // Update email if changed
+            $newEmail = trim($_POST['email'] ?? '');
+            if ($newEmail && $newEmail !== $user['email']) {
+                if (filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+                    $check = db()->prepare('SELECT id FROM users WHERE email=? AND id!=?');
+                    $check->execute([$newEmail, (int)$user['id']]);
+                    if (!$check->fetch()) {
+                        db()->prepare('UPDATE users SET email=? WHERE id=?')->execute([$newEmail, (int)$user['id']]);
+                    } else {
+                        session_flash('error', 'Email already in use.');
+                        redirect('/?page=account&tab=profile');
+                    }
+                } else {
+                    session_flash('error', 'Invalid email address.');
+                    redirect('/?page=account&tab=profile');
+                }
+            }
+            db()->prepare('UPDATE users SET full_name=?, phone=?, bio=?, avatar=? WHERE id=?')
                 ->execute([$_POST['full_name'], $_POST['phone'], $_POST['bio'], $avatarUrl, (int)$user['id']]);
             audit('profile_updated', 'users', (string)$user['id']);
             session_flash('notice', 'Profile updated.');
@@ -875,6 +909,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             db()->prepare('DELETE FROM contact_submissions WHERE id=?')->execute([(int)$_POST['id']]);
             session_flash('notice', 'Contact submission deleted.');
             redirect('/?page=admin&tab=contact');
+
+        case 'admin_set_email_forward':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $email = $_POST['email'] ?? '';
+            $forward = trim($_POST['forward_to'] ?? '');
+            if ($email && $forward && filter_var($forward, FILTER_VALIDATE_EMAIL)) {
+                $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
+                $sqldb->prepare("INSERT INTO alias (address, goto, active) VALUES (?,?,1)")->execute([$email, $forward]);
+            }
+            redirect('/?page=admin&tab=inbox&subtab=accounts');
+
+        case 'admin_delete_email_forward':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
+            $sqldb->prepare("DELETE FROM alias WHERE address=? AND goto=?")->execute([$_POST['email'], '']);
+            // fallback: delete by id
+            if (!empty($_POST['id'])) $sqldb->prepare("DELETE FROM alias WHERE id=?")->execute([(int)$_POST['id']]);
+            redirect('/?page=admin&tab=inbox&subtab=accounts');
 
         // === SIZE CHARTS ===
         case 'admin_save_size_chart':
@@ -1541,6 +1593,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'add_membership_to_cart':
             if (!$user) { session_flash('error', 'Please log in.'); redirect('/?page=login'); }
             $planId = (int)($_POST['plan_id'] ?? 0);
+            $plan = db()->prepare('SELECT * FROM membership_plans WHERE id=? AND is_active=1');
+            $plan->execute([$planId]);
+            $planData = $plan->fetch();
+            if (!$planData) { session_flash('error', 'Invalid plan.'); redirect('/?page=shop&category=sugga-gang-member'); }
+            // Check DEV code for test plans
+            if (stripos($planData['name'], 'test') !== false) {
+                $devCode = trim($_POST['dev_code'] ?? '');
+                if (strtoupper($devCode) !== 'DEV') {
+                    session_flash('error', 'This plan requires the DEV code to purchase.');
+                    redirect('/?page=shop&category=sugga-gang-member');
+                }
+            }
             add_membership_to_cart($planId);
             session_flash('notice', 'Membership added to cart.');
             redirect('/?page=cart');
@@ -1570,6 +1634,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $user = current_user();
+
+// Email forwards (outside POST switch)
+if ($action === 'admin_get_email_forwards') {
+    header('Content-Type: application/json');
+    if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { echo json_encode([]); exit; }
+    $email = $_GET['email'] ?? '';
+    $forwards = [];
+    if (file_exists('/www/vmail/postfixadmin.db')) {
+        try {
+            $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
+            $stmt = $sqldb->prepare("SELECT id, goto as dest_email FROM alias WHERE address=? AND active=1");
+            $stmt->execute([$email]);
+            $forwards = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {}
+    }
+    echo json_encode($forwards);
+    exit;
+}
 
 // Backup download (handled outside POST switch)
 if ($action === 'admin_download_backup') {
@@ -1820,9 +1902,15 @@ case 'shipping':
             if ($result['success']) $discount = $result['discount'];
             else { unset($_SESSION['coupon']); $couponCode = null; }
         }
+        // Member discount
+        $memberDiscount = 0;
+        if ($user) {
+            $memberDiscount = get_member_discount((int)$user['id'], $subtotal);
+            $discount = max($discount, $memberDiscount);
+        }
         $shippingMethods = db()->query('SELECT * FROM shipping WHERE region = "United States" AND active = 1')->fetchAll();
         $hero_content = '<p class="eyebrow">Your Cart</p><h1>Shopping Cart</h1>';
-        $content = render_cart($items, $subtotal, $discount, $couponCode, $shippingMethods);
+        $content = render_cart($items, $subtotal, $discount, $couponCode, $shippingMethods, $user ? (bool)db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active'")->execute([(int)$user['id']]) && db()->query("SELECT id FROM user_memberships WHERE user_id=".(int)$user['id']." AND status='active'")->fetch() : false);
         break;
 
     case 'checkout':
@@ -1855,7 +1943,7 @@ case 'shipping':
         $content = render_order_confirmed($order, $orderItems);
         break;
 
-    case 'account':
+     case 'account':
         if (!$user) { session_flash('error', 'Please log in.'); redirect('/?page=login'); }
         $tab = $_GET['tab'] ?? 'dashboard';
         $orders = db()->prepare('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC')->execute([(int)$user['id']]) ? db()->query('SELECT * FROM orders WHERE user_id = ' . (int)$user['id'] . ' ORDER BY created_at DESC')->fetchAll() : [];
@@ -1864,7 +1952,18 @@ case 'shipping':
         $devices = db()->prepare('SELECT * FROM device_tracking WHERE user_id = ? ORDER BY last_seen_at DESC LIMIT 10')->execute([(int)$user['id']]) ? db()->query('SELECT * FROM device_tracking WHERE user_id = ' . (int)$user['id'] . ' ORDER BY last_seen_at DESC LIMIT 10')->fetchAll() : [];
         $notifications = db()->prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20')->execute([(int)$user['id']]) ? db()->query('SELECT * FROM notifications WHERE user_id = ' . (int)$user['id'] . ' ORDER BY created_at DESC LIMIT 20')->fetchAll() : [];
         $recentOrders = array_slice($orders, 0, 5);
-        $content = render_account_dashboard($user, $tab, $recentOrders, $orders, $addresses, $wishlist, $devices, $notifications);
+        // Get membership info
+        $membership = db()->prepare("SELECT m.*, p.name as plan_name, p.price, p.benefits FROM user_memberships m JOIN membership_plans p ON p.id=m.plan_id WHERE m.user_id=? AND m.status='active' LIMIT 1");
+        $membership->execute([(int)$user['id']]);
+        $userMembership = $membership->fetch() ?: null;
+        // Auto-renewal check: if membership expired, generate new invoice
+        if ($userMembership && $userMembership['end_date'] && strtotime($userMembership['end_date']) < time()) {
+            $invNum = 'INV-MEM-' . time() . '-' . $user['id'];
+            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")
+                ->execute([(int)$user['id'], $invNum, (float)$userMembership['price']]);
+            db()->prepare("UPDATE user_memberships SET start_date=NOW(), end_date=DATE_ADD(NOW(), INTERVAL 1 MONTH) WHERE id=?")->execute([(int)$userMembership['id']]);
+        }
+        $content = render_account_dashboard($user, $tab, $recentOrders, $orders, $addresses, $wishlist, $devices, $notifications, $userMembership);
         break;
 
     case 'admin':
