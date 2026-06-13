@@ -1075,10 +1075,10 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
             <p class="hint"><?= e($user['email']) ?></p>
             <span class="badge"><?= e(ucfirst($user['role'])) ?></span>
             <?php if ($userMembership): ?>
-              <div style="margin-top:8px;padding:8px;background:rgba(0,200,255,0.08);border:1px solid rgba(0,200,255,0.2);border-radius:6px;font-size:11px;text-align:center">
+              <a href="/?page=account&tab=dashboard" style="display:block;margin-top:8px;padding:8px;background:rgba(0,200,255,0.08);border:1px solid rgba(0,200,255,0.2);border-radius:6px;font-size:11px;text-align:center;text-decoration:none;color:var(--text);transition:.15s" onmouseover="this.style.background='rgba(0,200,255,0.15)'" onmouseout="this.style.background='rgba(0,200,255,0.08)'">
                 <strong style="color:var(--cyan)">🔥 Sugga Gang Member</strong>
                 <p style="font-size:10px;color:var(--text2);margin:4px 0"><?= e($userMembership['plan_name']) ?> · $<?= e(number_format((float)$userMembership['price'],2)) ?>/mo</p>
-              </div>
+              </a>
             <?php endif; ?>
           </div>
           <nav class="account-nav">
