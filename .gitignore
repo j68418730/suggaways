@@ -46,3 +46,7 @@ shadow-hoodie-1.jpg
 # Session dumps
 /tmp/
 *.tmp
+storage/backups/
+storage/sessions/
+storage/logs/
+/repo/
