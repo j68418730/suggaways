@@ -1059,7 +1059,7 @@ function render_order_confirmed(array $order, array $items): string
     return ob_get_clean();
 }
 
-function render_account_dashboard(array $user, string $tab, array $recentOrders, array $allOrders, array $addresses, array $wishlist, array $devices, array $notifications, ?array $userMembership = null): string
+function render_account_dashboard(array $user, string $tab, array $recentOrders, array $allOrders, array $addresses, array $wishlist, array $devices, array $notifications, ?array $userMembership = null, array $memberInvoices = []): string
 {
     ob_start(); ?>
     <div class="account-layout">
@@ -1121,6 +1121,50 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
                 <?php endforeach; ?>
               </table>
             </div>
+          <?php endif; ?>
+          <?php if ($userMembership): ?>
+          <div class="panel" style="border-color:rgba(0,200,255,0.3)">
+            <h3>🔥 Membership</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <p><strong><?= e($userMembership['plan_name']) ?></strong></p>
+                <p style="font-size:12px;color:var(--muted)">$<?= e(number_format((float)$userMembership['price'],2)) ?>/month</p>
+                <p style="font-size:11px;color:var(--muted)">Since <?= e(date('M j, Y', strtotime($userMembership['start_date']))) ?></p>
+                <p style="font-size:11px;color:var(--muted)">Auto-renew: <?= $userMembership['auto_pay'] ? '✅ On' : '❌ Off' ?></p>
+              </div>
+              <div style="text-align:right">
+                <div style="padding:8px;background:rgba(0,200,255,0.06);border-radius:6px;font-size:11px">
+                  <strong style="color:var(--cyan)">Benefits</strong>
+                  <?php $benefits = json_decode($userMembership['benefits'] ?? '[]', true); ?>
+                  <?php foreach ($benefits as $b): ?>
+                    <div style="padding:2px 0">✅ <?= e($b) ?></div>
+                  <?php endforeach; ?>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <form method="post" style="display:inline">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="cancel_membership">
+                <button class="button" type="submit" style="padding:6px 14px;min-height:auto;font-size:11px;border-color:rgba(255,76,76,0.5)" onclick="return confirm('Cancel membership?')">Cancel Subscription</button>
+              </form>
+              <form method="post" style="display:inline">
+                <?= csrf_field() ?>
+                <input type="hidden" name="action" value="toggle_auto_pay">
+                <button class="button" type="submit" style="padding:6px 14px;min-height:auto;font-size:11px"><?= $userMembership['auto_pay'] ? '❌ Disable' : '✅ Enable' ?> Auto-Renew</button>
+              </form>
+            </div>
+            <?php if (!empty($memberInvoices)): ?>
+            <hr style="border-color:var(--line-soft);margin:12px 0">
+            <h4 style="font-size:12px;margin-bottom:6px">Recent Invoices</h4>
+            <table class="table" style="font-size:11px">
+              <tr><th>Invoice</th><th>Amount</th><th>Status</th><th>Date</th></tr>
+              <?php foreach ($memberInvoices as $inv): ?>
+                <tr><td><?= e($inv['invoice_number']) ?></td><td>$<?= e(number_format((float)$inv['amount'],2)) ?></td><td><span class="badge" style="background:<?= $inv['status']==='paid'?'var(--green)':'var(--orange)' ?>;font-size:9px"><?= e(ucfirst($inv['status'])) ?></span></td><td><?= e(date('M j, Y', strtotime($inv['created_at']))) ?></td></tr>
+              <?php endforeach; ?>
+            </table>
+            <?php endif; ?>
+          </div>
           <?php endif; ?>
           <div class="panel">
             <h3>Quick Links</h3>
