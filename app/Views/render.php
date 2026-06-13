@@ -1181,20 +1181,45 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
         <?php elseif ($tab === 'orders'): ?>
           <div class="panel">
             <h2>Order History</h2>
-            <?php if (empty($allOrders)): ?>
+            <?php
+            // Merge membership invoices into the order list
+            $allItems = [];
+            foreach ($allOrders as $ord) {
+              $allItems[] = [
+                'type' => 'order',
+                'number' => $ord['order_number'],
+                'date' => $ord['created_at'],
+                'name' => 'Order #' . $ord['order_number'],
+                'total' => $ord['total'],
+                'status' => $ord['status'],
+                'link' => '/?page=account&tab=orders',
+              ];
+            }
+            foreach ($memberInvoices as $inv) {
+              $allItems[] = [
+                'type' => 'membership',
+                'number' => $inv['invoice_number'],
+                'date' => $inv['created_at'],
+                'name' => 'Membership - ' . e($userMembership['plan_name'] ?? 'Subscription'),
+                'total' => $inv['amount'],
+                'status' => $inv['status'],
+                'link' => '/?page=account',
+              ];
+            }
+            usort($allItems, fn($a, $b) => strtotime($b['date']) - strtotime($a['date']));
+            ?>
+            <?php if (empty($allItems)): ?>
               <p>No orders yet. <a href="/?page=shop">Start shopping</a></p>
             <?php else: ?>
               <table class="table">
-                <tr><th>Order #</th><th>Type</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th><th>Tracking</th></tr>
-                <?php foreach ($allOrders as $ord): ?>
+                <tr><th>Number</th><th>Item</th><th>Date</th><th>Total</th><th>Status</th></tr>
+                <?php foreach ($allItems as $item): ?>
                   <tr>
-                    <td>#<?= e($ord['order_number']) ?></td>
-                    <td><span class="badge" style="background:<?= ($ord['order_type'] ?? 'standard') === 'preorder' ? 'var(--cyan)' : 'var(--muted)' ?>;font-size:10px"><?= e(ucfirst($ord['order_type'] ?? 'standard')) ?></span></td>
-                    <td><?= e(date('M j, Y', strtotime($ord['created_at']))) ?></td>
-                    <td><?php $oi = db()->prepare('SELECT COUNT(*) FROM order_items WHERE order_id = ?')->execute([(int)$ord['id']]) ? (int)db()->query('SELECT COUNT(*) FROM order_items WHERE order_id = ' . (int)$ord['id'])->fetchColumn() : 0; echo $oi; ?></td>
-                    <td>$<?= e(number_format((float)$ord['total'], 2)) ?></td>
-                    <td><span class="status-<?= e($ord['status']) ?>"><?= e(ucfirst($ord['status'])) ?></span></td>
-                    <td><?= $ord['tracking_number'] ? e($ord['tracking_number']) : '—' ?></td>
+                    <td style="font-size:11px"><?= e($item['number']) ?></td>
+                    <td><a href="<?= $item['link'] ?>" style="color:var(--text);text-decoration:none"><?= $item['name'] ?></a></td>
+                    <td><?= e(date('M j, Y', strtotime($item['date']))) ?></td>
+                    <td>$<?= e(number_format((float)$item['total'], 2)) ?></td>
+                    <td><span class="badge" style="background:<?= $item['status']==='paid'||$item['status']==='delivered'?'var(--green)':($item['status']==='pending'?'var(--orange)':'var(--red)') ?>;font-size:10px"><?= e(ucfirst($item['status'])) ?></span></td>
                   </tr>
                 <?php endforeach; ?>
               </table>
