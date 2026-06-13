@@ -1183,49 +1183,61 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
           <div class="panel">
             <h2>Order History</h2>
             <?php
-            // Merge membership invoices into the order list
             $allItems = [];
             foreach ($allOrders as $ord) {
-              $allItems[] = [
-                'type' => 'order',
-                'number' => $ord['order_number'],
-                'date' => $ord['created_at'],
-                'name' => 'Order #' . $ord['order_number'],
-                'total' => $ord['total'],
-                'status' => $ord['status'],
-                'link' => '/?page=account&tab=orders',
-              ];
+              $orderPm = db()->query("SELECT provider FROM payments WHERE order_id=".(int)$ord['id']." LIMIT 1")->fetchColumn();
+              $allItems[] = ['type'=>'order','number'=>$ord['order_number'],'date'=>$ord['created_at'],'name'=>'Order #'.$ord['order_number'],'total'=>$ord['total'],'status'=>$ord['status'],'pm'=>$orderPm ?: '','link'=>'/?page=account&tab=orders',];
             }
+            $memberPm = $userMembership['last_payment_method'] ?? '';
             foreach ($memberInvoices as $inv) {
-              $allItems[] = [
-                'type' => 'membership',
-                'number' => $inv['invoice_number'],
-                'date' => $inv['created_at'],
-                'name' => 'Membership - ' . e($userMembership['plan_name'] ?? 'Subscription') . ($inv['payment_method'] ? ' (' . e(ucfirst(str_replace('_',' ',$inv['payment_method']))) . ')' : ''),
-                'total' => $inv['amount'],
-                'status' => $inv['status'],
-                'link' => '/?page=account',
-              ];
+              $allItems[] = ['type'=>'membership','number'=>$inv['invoice_number'],'date'=>$inv['created_at'],'name'=>'Membership - '.e($userMembership['plan_name'] ?? 'Subscription'),'total'=>$inv['amount'],'status'=>$inv['status'],'pm'=>$inv['payment_method'] ?: $memberPm,'link'=>'/?page=account',];
             }
-            usort($allItems, fn($a, $b) => strtotime($b['date']) - strtotime($a['date']));
+            usort($allItems, fn($a,$b) => strtotime($b['date']) - strtotime($a['date']));
             ?>
             <?php if (empty($allItems)): ?>
               <p>No orders yet. <a href="/?page=shop">Start shopping</a></p>
             <?php else: ?>
               <table class="table">
-                <tr><th>Number</th><th>Item</th><th>Date</th><th>Total</th><th>Status</th></tr>
+                <tr><th>Number</th><th>Item</th><th>Date</th><th>Total</th><th>Payment</th><th>Status</th></tr>
                 <?php foreach ($allItems as $item): ?>
                   <tr>
                     <td style="font-size:11px"><?= e($item['number']) ?></td>
                     <td><a href="<?= $item['link'] ?>" style="color:var(--text);text-decoration:none"><?= $item['name'] ?></a></td>
                     <td><?= e(date('M j, Y', strtotime($item['date']))) ?></td>
                     <td>$<?= e(number_format((float)$item['total'], 2)) ?></td>
+                    <td style="font-size:11px">
+                      <?php if ($item['pm']): ?>
+                        <span class="badge" style="background:rgba(0,200,255,0.1);font-size:9px"><?= e(ucfirst(str_replace('_',' ',$item['pm']))) ?></span>
+                      <?php else: ?>
+                        <span style="color:var(--text2)">—</span>
+                      <?php endif; ?>
+                    </td>
                     <td><span class="badge" style="background:<?= $item['status']==='paid'||$item['status']==='delivered'?'var(--green)':($item['status']==='pending'?'var(--orange)':'var(--red)') ?>;font-size:10px"><?= e(ucfirst($item['status'])) ?></span></td>
                   </tr>
                 <?php endforeach; ?>
               </table>
             <?php endif; ?>
           </div>
+          <?php if ($userMembership): ?>
+          <div class="panel" style="margin-top:16px">
+            <h3>💳 Change Payment Method</h3>
+            <p class="hint">Update your default payment method for future membership renewals.</p>
+            <form method="post" class="form" style="max-width:400px">
+              <?= csrf_field() ?>
+              <input type="hidden" name="action" value="update_member_payment">
+              <label>Payment Method
+                <select name="payment_method" required style="width:100%">
+                  <option value="">— Select —</option>
+                  <?php $methods = ['paypal'=>'PayPal','stripe'=>'Credit/Debit Card','cash_app'=>'Cash App','square'=>'Square','apple_pay'=>'Apple Pay','google_pay'=>'Google Pay','bank_transfer'=>'Bank Transfer']; ?>
+                  <?php foreach ($methods as $key => $label): ?>
+                    <option value="<?= $key ?>" <?= $memberPm === $key ? 'selected' : '' ?>><?= $label ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </label>
+              <button class="button primary" type="submit" style="padding:8px 16px;min-height:auto;font-size:12px">Update Payment Method</button>
+            </form>
+          </div>
+          <?php endif; ?>
 
         <?php elseif ($tab === 'profile'): ?>
           <div class="panel">
