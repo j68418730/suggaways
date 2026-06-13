@@ -1082,14 +1082,15 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
             <?php endif; ?>
           </div>
           <nav class="account-nav">
-            <a href="/?page=account&tab=dashboard" class="<?= $tab === 'dashboard' ? 'active' : '' ?>">Dashboard</a>
-            <a href="/?page=account&tab=orders" class="<?= $tab === 'orders' ? 'active' : '' ?>">Orders</a>
-            <a href="/?page=account&tab=profile" class="<?= $tab === 'profile' ? 'active' : '' ?>">Profile</a>
-            <a href="/?page=account&tab=addresses" class="<?= $tab === 'addresses' ? 'active' : '' ?>">Addresses</a>
-            <a href="/?page=account&tab=wishlist" class="<?= $tab === 'wishlist' ? 'active' : '' ?>">Wishlist</a>
-            <a href="/?page=account&tab=notifications" class="<?= $tab === 'notifications' ? 'active' : '' ?>">Notifications</a>
-            <a href="/?page=account&tab=devices" class="<?= $tab === 'devices' ? 'active' : '' ?>">Devices</a>
-            <a href="/?page=account&tab=security" class="<?= $tab === 'security' ? 'active' : '' ?>">Security</a>
+            <a href="/?page=account&tab=dashboard" class="<?= $tab === 'dashboard' ? 'active' : '' ?>">📊 Dashboard</a>
+            <a href="/?page=account&tab=orders" class="<?= $tab === 'orders' ? 'active' : '' ?>">📋 Orders</a>
+            <a href="/?page=account&tab=profile" class="<?= $tab === 'profile' ? 'active' : '' ?>">👤 Profile</a>
+            <a href="/?page=account&tab=addresses" class="<?= $tab === 'addresses' ? 'active' : '' ?>">📍 Addresses</a>
+            <a href="/?page=account&tab=payment" class="<?= $tab === 'payment' ? 'active' : '' ?>">💳 Payment Method</a>
+            <a href="/?page=account&tab=wishlist" class="<?= $tab === 'wishlist' ? 'active' : '' ?>">❤️ Wishlist</a>
+            <a href="/?page=account&tab=notifications" class="<?= $tab === 'notifications' ? 'active' : '' ?>">🔔 Notifications</a>
+            <a href="/?page=account&tab=devices" class="<?= $tab === 'devices' ? 'active' : '' ?>">📱 Devices</a>
+            <a href="/?page=account&tab=security" class="<?= $tab === 'security' ? 'active' : '' ?>">🔒 Security</a>
           </nav>
         </div>
       </div>
@@ -1218,26 +1219,6 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
               </table>
             <?php endif; ?>
           </div>
-          <?php if ($userMembership): ?>
-          <div class="panel" style="margin-top:16px">
-            <h3>💳 Change Payment Method</h3>
-            <p class="hint">Update your default payment method for future membership renewals.</p>
-            <form method="post" class="form" style="max-width:400px">
-              <?= csrf_field() ?>
-              <input type="hidden" name="action" value="update_member_payment">
-              <label>Payment Method
-                <select name="payment_method" required style="width:100%">
-                  <option value="">— Select —</option>
-                  <?php $methods = ['paypal'=>'PayPal','stripe'=>'Credit/Debit Card','cash_app'=>'Cash App','square'=>'Square','apple_pay'=>'Apple Pay','google_pay'=>'Google Pay','bank_transfer'=>'Bank Transfer']; ?>
-                  <?php foreach ($methods as $key => $label): ?>
-                    <option value="<?= $key ?>" <?= $memberPm === $key ? 'selected' : '' ?>><?= $label ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </label>
-              <button class="button primary" type="submit" style="padding:8px 16px;min-height:auto;font-size:12px">Update Payment Method</button>
-            </form>
-          </div>
-          <?php endif; ?>
 
         <?php elseif ($tab === 'profile'): ?>
           <div class="panel">
@@ -1352,9 +1333,56 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
             <?php endif; ?>
           </div>
 
+        <?php elseif ($tab === 'payment'): ?>
+          <div class="panel">
+            <h2>💳 Payment Method</h2>
+            <?php if ($userMembership): $memberPm = $userMembership['last_payment_method'] ?? ''; ?>
+            <p class="hint">Set your default payment method for membership auto-renewals.</p>
+            <form method="post" class="form" style="max-width:450px" onsubmit="return confirm('By saving, you agree to our Terms of Service and Acceptable Use Policy.')">
+              <?= csrf_field() ?>
+              <input type="hidden" name="action" value="update_member_payment">
+              <label>Payment Method
+                <select name="payment_method" required style="width:100%">
+                  <option value="">— Select —</option>
+                  <?php $pmMethods = ['paypal'=>'PayPal','cash_app'=>'Cash App','stripe'=>'Credit/Debit Card','square'=>'Square','apple_pay'=>'Apple Pay','google_pay'=>'Google Pay','bank_transfer'=>'Bank Transfer']; ?>
+                  <?php foreach ($pmMethods as $k => $l): ?>
+                    <option value="<?= $k ?>" <?= $memberPm === $k ? 'selected' : '' ?>><?= $l ?></option>
+                  <?php endforeach; ?>
+                </select>
+              </label>
+              <div id="pmExtra" style="margin-top:8px"></div>
+              <script>
+              document.querySelector('[name="payment_method"]')?.addEventListener('change', function(){
+                var div = document.getElementById('pmExtra');
+                if (this.value === 'cash_app') div.innerHTML = '<label>Cash App ID / $Cashtag<input name="pm_id" placeholder="$yourcashtag" required></label>';
+                else if (this.value === 'paypal') div.innerHTML = '<label>PayPal Email<input name="pm_id" type="email" placeholder="you@paypal.com" required></label><p class="hint" style="margin-top:4px">You will be redirected to PayPal to link your account.</p>';
+                else div.innerHTML = '';
+              });
+              </script>
+              <label style="display:flex;align-items:center;gap:6px;margin:12px 0;font-size:12px;cursor:pointer">
+                <input type="checkbox" name="agree" value="1" required>
+                I agree to the <a href="/?page=terms" target="_blank">Terms of Service</a> and <a href="/?page=privacy" target="_blank">Acceptable Use Policy</a>
+              </label>
+              <button class="button primary" type="submit" style="padding:8px 16px;min-height:auto;font-size:12px">💾 Save Payment Method</button>
+            </form>
+            <hr style="border-color:var(--line-soft);margin:16px 0">
+            <h3 style="font-size:13px">Current Payment Method</h3>
+            <p style="font-size:13px;margin:8px 0">
+              <?php if ($memberPm): ?>
+                <span class="badge" style="background:rgba(0,200,255,0.1);font-size:12px">💳 <?= e(ucfirst(str_replace('_',' ',$memberPm))) ?></span>
+              <?php else: ?>
+                <span style="color:var(--text2)">No payment method set.</span>
+              <?php endif; ?>
+            </p>
+            <?php else: ?>
+            <p class="hint">You need an active membership to set a payment method.</p>
+            <a href="/?page=shop&category=sugga-gang-member" class="button">🔥 Join Sugga Gang</a>
+            <?php endif; ?>
+          </div>
+
         <?php elseif ($tab === 'devices'): ?>
           <div class="panel">
-            <h2>Device Login History</h2>
+            <h2>📱 Device Login History</h2>
             <?php if (empty($devices)): ?>
               <p>No devices recorded.</p>
             <?php else: ?>
