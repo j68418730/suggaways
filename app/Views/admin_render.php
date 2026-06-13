@@ -140,7 +140,7 @@ function render_admin_dashboard(
         <?php foreach (array_slice($todos, 0, 10) as $t): ?>
           <tr style="<?= $t['is_completed'] ? 'opacity:0.5' : '' ?>">
             <td style="text-align:center;font-size:14px"><?= $t['is_completed'] ? '✅' : '⬜' ?></td>
-            <td style="<?= $t['is_completed'] ? 'text-decoration:line-through' : '' ?>"><?= e($t['title']) ?></td>
+            <td style="<?= $t['is_completed'] ? 'text-decoration:line-through' : '' ?>;word-wrap:break-word;max-width:400px"><?= e($t['title']) ?></td>
             <td><span class="badge" style="background:<?= $t['is_active'] ? 'var(--green)' : 'var(--orange)' ?>;font-size:10px"><?= $t['is_active'] ? 'Active' : 'Off' ?></span></td>
           </tr>
         <?php endforeach; ?>
@@ -966,8 +966,8 @@ function admin_payments(array $paymentSettings): void
               <input type="hidden" name="action" value="admin_update_payment">
               <input type="hidden" name="id" value="<?= (int)$ps['id'] ?>">
               <div class="form-row">
-                <label class="checkbox-label"><input type="checkbox" name="enabled" value="1" <?= $ps['enabled'] ? 'checked' : '' ?>> Enabled</label>
-                <label class="checkbox-label"><input type="checkbox" name="sandbox_mode" value="1" <?= $ps['sandbox_mode'] ? 'checked' : '' ?>> Sandbox</label>
+                <label class="checkbox-label"><input type="checkbox" name="enabled" value="1" <?= $ps['enabled'] ? 'checked' : '' ?> onchange="this.form.submit()"> Enabled</label>
+                <label class="checkbox-label"><input type="checkbox" name="sandbox_mode" value="1" <?= $ps['sandbox_mode'] ? 'checked' : '' ?> onchange="this.form.submit()"> Sandbox</label>
               </div>
               <label>Label<input name="label" value="<?= e($ps['label'] ?? '') ?>"></label>
               <?php if ($ps['provider'] === 'cash_app'): ?>
@@ -976,7 +976,7 @@ function admin_payments(array $paymentSettings): void
                 <label>Public Key / Client ID<input name="public_key" value="<?= e($ps['public_key'] ?? '') ?>"></label>
                 <label>Secret Key / Token<input name="secret_key" value="<?= e($ps['secret_key'] ?? '') ?>"></label>
               <?php endif; ?>
-              <button class="button primary" type="submit">Save Settings</button>
+              <button class="button primary" type="submit" style="display:none">Save Settings</button>
             </form>
           </div>
         <?php endforeach; ?>
