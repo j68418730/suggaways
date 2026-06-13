@@ -85,8 +85,8 @@ function render_admin_dashboard(
         <h3>Webmaster v2</h3>
         <p class="hint"><?= e($user['full_name'] ?: $user['username']) ?></p>
         <nav class="admin-nav">
-          <?php $origOrder = ['dashboard','products','categories','comingsoon','orders','customers','coupons','pos','payments','shipping','inventory','reorder','sizecharts','employees','memberships','signins','audit','inbox','newsletter','contact','pages','blog','events','todos','bugreports','settings','security'];
-          $labels = ['dashboard'=>'📊 Dashboard','products'=>'📦 Products','categories'=>'🏷️ Categories','comingsoon'=>'⏳ Coming Soon','orders'=>'📋 Orders','customers'=>'👤 Customers','coupons'=>'🎫 Coupons','pos'=>'🧾 POS Drawer','payments'=>'💳 Payments','shipping'=>'🚚 Shipping','inventory'=>'📦 Inventory','reorder'=>'🔄 Reorder','sizecharts'=>'📏 Size Charts','employees'=>'👥 Employees','memberships'=>'👥 Members','signins'=>'🔑 Sign-ins','audit'=>'📜 Audit Log','inbox'=>'📨 Inbox','newsletter'=>'📧 Newsletter','contact'=>'📧 Contact','pages'=>'📄 Pages','blog'=>'✍️ Blog','events'=>'📅 Events','todos'=>'✅ Todo Board','bugreports'=>'🐛 Bug Reports','settings'=>'⚙️ Settings','security'=>'🔒 Security'];
+          <?php           $origOrder = ['dashboard','products','seasons','categories','comingsoon','orders','customers','coupons','pos','payments','shipping','inventory','reorder','sizecharts','employees','memberships','signins','audit','inbox','newsletter','contact','pages','blog','events','todos','bugreports','settings','security'];
+          $labels = ['dashboard'=>'📊 Dashboard','products'=>'📦 Products','seasons'=>'🏖️ Seasons','categories'=>'🏷️ Categories','comingsoon'=>'⏳ Coming Soon','orders'=>'📋 Orders','customers'=>'👤 Customers','coupons'=>'🎫 Coupons','pos'=>'🧾 POS Drawer','payments'=>'💳 Payments','shipping'=>'🚚 Shipping','inventory'=>'📦 Inventory','reorder'=>'🔄 Reorder','sizecharts'=>'📏 Size Charts','employees'=>'👥 Employees','memberships'=>'👥 Members','signins'=>'🔑 Sign-ins','audit'=>'📜 Audit Log','inbox'=>'📨 Inbox','newsletter'=>'📧 Newsletter','contact'=>'📧 Contact','pages'=>'📄 Pages','blog'=>'✍️ Blog','events'=>'📅 Events','todos'=>'✅ Todo Board','bugreports'=>'🐛 Bug Reports','settings'=>'⚙️ Settings','security'=>'🔒 Security'];
           foreach ($origOrder as $tabKey): $superOnly = in_array($tabKey, ['inbox','memberships','todos','security'], true); if ($superOnly && !$isSuperAdmin) continue; ?>
             <a href="/?page=admin&tab=<?= $tabKey ?>" class="<?= $effectiveTab === $tabKey ? 'active' : '' ?>"><?= $labels[$tabKey] ?? $tabKey ?></a>
           <?php endforeach; ?>
@@ -119,6 +119,7 @@ function render_admin_dashboard(
             'sizecharts' => admin_size_charts(),
             'shipping' => admin_shipping(),
             'todos' => admin_todos($todos),
+            'seasons' => admin_seasons(),
             'inbox' => admin_inbox($user),
             'newsletter' => admin_newsletter(),
             'memberships' => admin_memberships(),
@@ -1427,6 +1428,51 @@ function admin_size_charts(): void
       c.appendChild(b);
     }
     </script>
+    <?php
+}
+
+function admin_seasons(): void
+{
+    $seasons = db()->query('SELECT * FROM seasons ORDER BY sort_order, name')->fetchAll();
+    $products = db()->query("SELECT id, name FROM products WHERE status='active' ORDER BY name")->fetchAll();
+    ?>
+    <div class="panel">
+      <h2>🏖️ Seasons</h2>
+      <details><summary class="button primary" style="display:inline-block;cursor:pointer">+ New Season</summary>
+        <form method="post" class="form" style="max-width:400px;margin-top:8px"><?= csrf_field() ?><input type="hidden" name="action" value="admin_add_season">
+          <label>Name<input name="name" required></label>
+          <label>Description<textarea name="description" rows="3"></textarea></label>
+          <button class="button primary" type="submit">Create Season</button>
+        </form>
+      </details>
+    </div>
+    <?php foreach ($seasons as $s): $sid = (int)$s['id']; $items = db()->query("SELECT p.id, p.name, p.slug FROM season_items si JOIN products p ON p.id=si.product_id WHERE si.season_id=$sid ORDER BY si.sort_order")->fetchAll(); ?>
+    <div class="panel">
+      <form method="post" style="display:flex;justify-content:space-between;align-items:center"><?= csrf_field() ?><input type="hidden" name="action" value="admin_toggle_season"><input type="hidden" name="id" value="<?= $sid ?>">
+        <h3 style="margin:0;font-size:15px"><?= e($s['name']) ?></h3>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="badge" style="background:<?= $s['is_active'] ? 'var(--green)' : 'var(--red)' ?>;font-size:10px"><?= $s['is_active'] ? 'On' : 'Off' ?></span>
+          <button class="button" type="submit" style="padding:4px 10px;min-height:auto;font-size:10px">Toggle</button>
+          <form method="post" style="display:inline" onsubmit="return confirm('Delete season?')"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_season"><input type="hidden" name="id" value="<?= $sid ?>"><button class="button" type="submit" style="padding:4px 10px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)">Del</button></form>
+        </div>
+      </form>
+      <p style="font-size:12px;color:var(--muted)"><?= e($s['description'] ?? '') ?></p>
+      <form method="post" style="display:flex;gap:4px;margin-top:8px"><?= csrf_field() ?><input type="hidden" name="action" value="admin_add_season_item"><input type="hidden" name="season_id" value="<?= $sid ?>">
+        <select name="product_id" style="flex:1;padding:4px;font-size:11px"><option value="">Add product...</option><?php foreach ($products as $p): ?><option value="<?= (int)$p['id'] ?>"><?= e($p['name']) ?></option><?php endforeach; ?></select>
+        <button class="button" type="submit" style="padding:4px 10px;min-height:auto;font-size:10px">+</button>
+      </form>
+      <?php if (!empty($items)): ?>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px">
+        <?php foreach ($items as $it): ?>
+          <span style="background:rgba(0,200,255,0.08);padding:4px 10px;border-radius:4px;font-size:11px;display:flex;align-items:center;gap:4px">
+            <?= e($it['name']) ?>
+            <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_remove_season_item"><input type="hidden" name="season_id" value="<?= $sid ?>"><input type="hidden" name="product_id" value="<?= (int)$it['id'] ?>"><button class="button" type="submit" style="padding:0 4px;min-height:auto;font-size:10px;border:none;background:none;color:var(--red);cursor:pointer">✕</button></form>
+          </span>
+        <?php endforeach; ?>
+      </div>
+      <?php endif; ?>
+    </div>
+    <?php endforeach; ?>
     <?php
 }
 
