@@ -1131,6 +1131,7 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
                 <p style="font-size:12px;color:var(--muted)">$<?= e(number_format((float)$userMembership['price'],2)) ?>/month</p>
                 <p style="font-size:11px;color:var(--muted)">Since <?= e(date('M j, Y', strtotime($userMembership['start_date']))) ?></p>
                 <p style="font-size:11px;color:var(--muted)">Auto-renew: <?= $userMembership['auto_pay'] ? '✅ On' : '❌ Off' ?></p>
+                <?php if ($userMembership['last_payment_method']): ?><p style="font-size:11px;color:var(--muted)">Payment: 💳 <?= e(ucfirst(str_replace('_', ' ', $userMembership['last_payment_method']))) ?></p><?php endif; ?>
               </div>
               <div style="text-align:right">
                 <div style="padding:8px;background:rgba(0,200,255,0.06);border-radius:6px;font-size:11px">
@@ -1157,10 +1158,10 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
             <?php if (!empty($memberInvoices)): ?>
             <hr style="border-color:var(--line-soft);margin:12px 0">
             <h4 style="font-size:12px;margin-bottom:6px">Recent Invoices</h4>
-            <table class="table" style="font-size:11px">
-              <tr><th>Invoice</th><th>Amount</th><th>Status</th><th>Date</th></tr>
+              <table class="table" style="font-size:11px">
+              <tr><th>Invoice</th><th>Amount</th><th>Payment</th><th>Status</th><th>Date</th></tr>
               <?php foreach ($memberInvoices as $inv): ?>
-                <tr><td><?= e($inv['invoice_number']) ?></td><td>$<?= e(number_format((float)$inv['amount'],2)) ?></td><td><span class="badge" style="background:<?= $inv['status']==='paid'?'var(--green)':'var(--orange)' ?>;font-size:9px"><?= e(ucfirst($inv['status'])) ?></span></td><td><?= e(date('M j, Y', strtotime($inv['created_at']))) ?></td></tr>
+                <tr><td><?= e($inv['invoice_number']) ?></td><td>$<?= e(number_format((float)$inv['amount'],2)) ?></td><td style="font-size:10px"><?= $inv['payment_method'] ? e(ucfirst(str_replace('_',' ',$inv['payment_method']))) : '—' ?></td><td><span class="badge" style="background:<?= $inv['status']==='paid'?'var(--green)':'var(--orange)' ?>;font-size:9px"><?= e(ucfirst($inv['status'])) ?></span></td><td><?= e(date('M j, Y', strtotime($inv['created_at']))) ?></td></tr>
               <?php endforeach; ?>
             </table>
             <?php endif; ?>
@@ -1200,7 +1201,7 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
                 'type' => 'membership',
                 'number' => $inv['invoice_number'],
                 'date' => $inv['created_at'],
-                'name' => 'Membership - ' . e($userMembership['plan_name'] ?? 'Subscription'),
+                'name' => 'Membership - ' . e($userMembership['plan_name'] ?? 'Subscription') . ($inv['payment_method'] ? ' (' . e(ucfirst(str_replace('_',' ',$inv['payment_method']))) . ')' : ''),
                 'total' => $inv['amount'],
                 'status' => $inv['status'],
                 'link' => '/?page=account',
