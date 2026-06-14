@@ -364,12 +364,13 @@ function cart_total(): float
 
 function cart_items(): array
 {
-    $items = $_SESSION['cart'] ?? [];
-    if (empty($items) && !empty($_SESSION['user_id'])) {
+    if (!empty($_SESSION['user_id'])) {
+        $items = [];
+        unset($_SESSION['cart']);
         $stmt = db()->query('SELECT c.*, p.name, p.price, p.sale_price, p.slug, p.images, p.sizes, p.colors FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ' . (int)$_SESSION['user_id']);
         $dbItems = $stmt->fetchAll();
         foreach ($dbItems as $dbItem) {
-            $items[] = [
+            $items[(int)$dbItem['id']] = [
                 'product_id' => $dbItem['product_id'],
                 'name' => $dbItem['name'],
                 'price' => $dbItem['sale_price'] ?: $dbItem['price'],
@@ -380,6 +381,8 @@ function cart_items(): array
                 'image' => json_decode($dbItem['images'], true)[0] ?? '/assets/img/background.png',
             ];
         }
+    } else {
+        $items = $_SESSION['cart'] ?? [];
     }
     // Merge preorder items from session
     if (!empty($_SESSION['preorder_cart'])) {
@@ -509,14 +512,21 @@ function update_cart(string $key, int $quantity): void
         if ($quantity <= 0) {
             db()->prepare('DELETE FROM cart WHERE id = ? AND user_id = ?')->execute([(int)$key, (int)$_SESSION['user_id']]);
         } else {
-            db()->prepare('UPDATE cart SET quantity = ? WHERE id = ? AND user_id = ?')->execute([$quantity, (int)$key, (int)$_SESSION['user_id']]);
+            $size = $_POST['size'] ?? null;
+            $color = $_POST['color'] ?? null;
+            db()->prepare('UPDATE cart SET quantity = ?, size = ?, color = ? WHERE id = ? AND user_id = ?')
+                ->execute([$quantity, $size, $color, (int)$key, (int)$_SESSION['user_id']]);
         }
         return;
     }
     if ($quantity <= 0) {
         unset($_SESSION['cart'][$key]);
     } else {
+        $size = $_POST['size'] ?? null;
+        $color = $_POST['color'] ?? null;
         $_SESSION['cart'][$key]['quantity'] = $quantity;
+        $_SESSION['cart'][$key]['size'] = $size;
+        $_SESSION['cart'][$key]['color'] = $color;
     }
 }
 
@@ -537,6 +547,9 @@ function apply_coupon(string $code, float $subtotal): array
         'success' => true,
         'coupon' => $coupon,
         'discount' => $discount,
+        'apply_to_total' => !empty($coupon['apply_to_total']),
+        'free_shipping' => !empty($coupon['free_shipping']),
+        'waive_taxes' => !empty($coupon['waive_taxes']),
     ];
 }
 

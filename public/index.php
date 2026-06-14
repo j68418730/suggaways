@@ -7,7 +7,8 @@ require_once dirname(__DIR__) . '/app/bootstrap.php';
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: SAMEORIGIN');
 header('Referrer-Policy: strict-origin-when-cross-origin');
-header("Content-Security-Policy: default-src 'self'; script-src 'self' https://www.paypal.com https://www.paypalobjects.com https://api.qrserver.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; img-src 'self' data: https://api.qrserver.com https://cash.app; font-src 'self' https://fonts.gstatic.com; frame-src 'self' https://www.paypal.com; connect-src 'self' https://api-m.sandbox.paypal.com");
+header("Content-Security-Policy: default-src 'self'; script-src 'self' https://www.paypal.com https://www.paypalobjects.com https://api.qrserver.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; img-src 'self' data: https://api.qrserver.com https://cash.app; font-src 'self' https://fonts.gstatic.com; frame-src 'self' https://www.paypal.com; connect-src 'self' https://api-m.paypal.com https://api-m.sandbox.paypal.com");
+header('Strict-Transport-Security: max-age=31536000; includeSubDomains; preload');
 header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
 
 $page = $_GET['page'] ?? (isset($_GET['role']) && $_GET['role'] === 'webmaster' ? 'webmaster' : 'home');
@@ -15,7 +16,12 @@ $action = $_POST['action'] ?? null;
 $user = current_user();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verify_csrf();
+    // Allow PayPal AJAX without CSRF (session-based auth)
+    if (in_array($_POST['action'] ?? '', ['paypal_create_order', 'paypal_capture_order'])) {
+        // Don't call verify_csrf - just proceed
+    } else {
+        verify_csrf();
+    }
 
     switch ($action) {
         case 'login':
@@ -106,8 +112,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('/?page=cart');
 
         case 'update_cart':
-            foreach (($_POST['quantity'] ?? []) as $key => $qty) {
-                update_cart($key, (int)$qty);
+            if (!empty($_POST['quantity'])) {
+                foreach ($_POST['quantity'] as $key => $qty) {
+                    update_cart((string)$key, (int)$qty);
+                }
+            } elseif (!empty($_POST['key'])) {
+                $qty = (int)($_POST['qty'] ?? 1);
+                update_cart((string)$_POST['key'], $qty);
             }
             redirect('/?page=cart');
 
@@ -135,20 +146,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$user) {
                 $guestName = trim((string)($_POST['guest_name'] ?? ''));
                 $guestEmail = trim((string)($_POST['guest_email'] ?? ''));
+                $cashappPhone = trim((string)($_POST['cashapp_phone'] ?? ''));
                 if (!$guestName || !$guestEmail) {
                     session_flash('error', 'Please provide your name and email.');
                     redirect('/?page=checkout');
                 }
                 $guestUsername = 'guest_' . bin2hex(random_bytes(6));
-                $stmt = db()->prepare('SELECT id FROM users WHERE email = ?');
+                $stmt = db()->prepare('SELECT id, phone FROM users WHERE email = ?');
                 $stmt->execute([$guestEmail]);
                 $existing = $stmt->fetch();
                 if ($existing) {
                     $userId = (int)$existing['id'];
+                    if ($cashappPhone && !$existing['phone']) {
+                        db()->prepare('UPDATE users SET phone = ? WHERE id = ?')->execute([$cashappPhone, $userId]);
+                    }
                 } else {
                     $hash = password_hash(bin2hex(random_bytes(16)), PASSWORD_ARGON2ID);
-                    $stmt = db()->prepare('INSERT INTO users (role, username, email, password_hash, full_name) VALUES (?, ?, ?, ?, ?)');
-                    $stmt->execute(['customer', $guestUsername, $guestEmail, $hash, $guestName]);
+                    $stmt = db()->prepare('INSERT INTO users (role, username, email, password_hash, full_name, phone) VALUES (?, ?, ?, ?, ?, ?)');
+                    $stmt->execute(['customer', $guestUsername, $guestEmail, $hash, $guestName, $cashappPhone ?: null]);
                     $userId = (int)db()->lastInsertId();
                 }
                 // Auto-login guest
@@ -182,10 +197,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $subtotal = cart_total();
             $couponCode = $_SESSION['coupon'] ?? null;
             $discount = 0.0;
+            $applyToTotal = false;
+            $freeShipping = false;
+            $waiveTaxes = false;
             if ($couponCode) {
                 $result = apply_coupon($couponCode, $subtotal);
                 if ($result['success']) {
-                    $discount = $result['discount'];
+                    $discount = (float)$result['discount'];
+                    $applyToTotal = !empty($result['apply_to_total']);
+                    $freeShipping = !empty($result['free_shipping']);
+                    $waiveTaxes = !empty($result['waive_taxes']);
                     db()->prepare('UPDATE coupons SET used_count = used_count + 1 WHERE code = ?')->execute([$couponCode]);
                 }
             }
@@ -195,14 +216,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $discount = max($discount, $memberDiscount);
 
             $taxRate = config('app.tax_rate', 8.25);
-            $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
+            if ($waiveTaxes) {
+                $tax = 0;
+            } elseif ($applyToTotal && $discount > 0) {
+                $tax = round($subtotal * ($taxRate / 100), 2);
+            } else {
+                $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
+            }
 
             $shippingStmt = db()->prepare('SELECT * FROM shipping WHERE id = ? AND active = 1');
             $shippingStmt->execute([(int)$shippingMethod]);
             $shippingRow = $shippingStmt->fetch();
-            $shippingCost = $shippingRow ? (float)$shippingRow['base_rate'] : 0.0;
+            $itemCount = array_sum(array_column($items, 'quantity'));
+            $shippingCost = $freeShipping ? 0 : ($shippingRow ? (float)$shippingRow['base_rate'] + ((float)($shippingRow['per_item_rate'] ?? 0) * $itemCount) : 0.0);
 
-            $total = $subtotal - $discount + $tax + $shippingCost;
+            $total = $applyToTotal && $discount > 0 ? $subtotal + $tax + $shippingCost - $discount : $subtotal - $discount + $tax + $shippingCost;
             $orderNumber = generate_order_number();
 
             db()->beginTransaction();
@@ -239,25 +267,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $existingMem = db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active'");
                         $existingMem->execute([(int)$user['id']]);
                         if (!$existingMem->fetch()) {
-                            db()->prepare("INSERT INTO user_memberships (user_id, plan_id, status, auto_pay, start_date, end_date) VALUES (?,?,'active',0,NOW(),DATE_ADD(NOW(), INTERVAL 1 MONTH))")
-                                ->execute([(int)$user['id'], $item['membership_id']]);
+                            db()->prepare("INSERT INTO user_memberships (user_id, plan_id, status, auto_pay, last_payment_method, start_date, end_date) VALUES (?,?,'active',?,?,NOW(),DATE_ADD(NOW(), INTERVAL 1 MONTH))")
+                                ->execute([(int)$user['id'], $item['membership_id'], !empty($item['auto_pay']) ? 1 : 0, $paymentMethod]);
                             $invNum = 'INV-MEM-' . time() . '-' . $user['id'];
-                            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'paid',DATE_ADD(NOW(), INTERVAL 1 MONTH))")
-                                ->execute([(int)$user['id'], $invNum, $item['price']]);
+                            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date, payment_method) VALUES (?,?,?,'paid',DATE_ADD(NOW(), INTERVAL 1 MONTH),?)")
+                                ->execute([(int)$user['id'], $invNum, $item['price'], $paymentMethod]);
                         }
                         continue;
+                    }
+                    $sku = '';
+                    if ($item['product_id']) {
+                        $ps = db()->prepare('SELECT sku FROM products WHERE id = ?');
+                        $ps->execute([(int)$item['product_id']]);
+                        $sku = (string)$ps->fetchColumn();
                     }
                     db()->prepare('INSERT INTO order_items (order_id, product_id, product_name, sku, size, color, quantity, unit_price, line_total, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
                         ->execute([
                             $orderId, $item['product_id'] ?? 0, $item['name'],
-                            '', $item['size'] ?? null, $item['color'] ?? null,
+                            $sku, $item['size'] ?? null, $item['color'] ?? null,
                             $item['quantity'], $item['price'], $item['price'] * $item['quantity'],
                             $item['image'] ?? null
                         ]);
                 }
 
-                db()->prepare('INSERT INTO payments (order_id, provider, status, amount, currency) VALUES (?, ?, ?, ?, ?)')
-                    ->execute([$orderId, $paymentMethod, $hasPreorders ? 'paid' : 'pending', $total, 'USD']);
+                $payload = null;
+                if ($paymentMethod === 'cash_app') {
+                    $cashAppTxId = trim((string)($_POST['cashapp_txid'] ?? ''));
+                    $cashAppTag = trim((string)($_POST['cashapp_tag'] ?? ''));
+                    $payload = json_encode([
+                        'cashapp_name' => $_POST['cashapp_name'] ?? '',
+                        'cashapp_phone' => $_POST['cashapp_phone'] ?? '',
+                        'cashapp_tag' => $cashAppTag,
+                        'cashapp_txid' => $cashAppTxId,
+                    ]);
+                }
+                db()->prepare('INSERT INTO payments (order_id, provider, status, amount, currency, encrypted_payload, provider_reference) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                    ->execute([$orderId, $paymentMethod, $hasPreorders ? 'paid' : 'pending', $total, 'USD', $payload, $cashAppTxId ?? null]);
 
                 if (!empty($_SESSION['user_id'])) {
                     db()->prepare('DELETE FROM cart WHERE user_id = ?')->execute([(int)$_SESSION['user_id']]);
@@ -268,7 +313,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 db()->commit();
                 audit('order_placed', 'orders', (string)$orderId, ['order_number' => $orderNumber, 'order_type' => $hasPreorders ? 'preorder' : 'standard']);
-                $msg = $hasPreorders ? "Preorder {$orderNumber} placed and paid!" : "Order {$orderNumber} placed successfully!";
+                if ($paymentMethod === 'cash_app') {
+                    $msg = "Order {$orderNumber} placed! Please complete your Cash App payment and upload the receipt below.";
+                } else {
+                    $msg = $hasPreorders ? "Preorder {$orderNumber} placed and paid!" : "Order {$orderNumber} placed successfully!";
+                }
                 session_flash('notice', $msg);
                 redirect("/?page=order-confirmed&order={$orderNumber}");
 
@@ -284,6 +333,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $subject = trim($_POST['subject'] ?? '');
             $message = trim($_POST['message'] ?? '');
             $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+
+            // Rate limiting: max 3 submissions per IP per hour
+            $recent = db()->prepare("SELECT COUNT(*) FROM contact_messages WHERE ip_address=? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)");
+            $recent->execute([$ip]);
+            if ((int)$recent->fetchColumn() >= 3) {
+                session_flash('error', 'Too many submissions. Please try again later.');
+                redirect('/?page=contact');
+            }
 
             // Check if blocked
             $blocked = db()->prepare("SELECT id FROM blocked_contacts WHERE email=? OR ip_address=?");
@@ -384,15 +441,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
-            // Update email if changed
+            // Update email with validation
             $newEmail = trim($_POST['email'] ?? '');
             if ($newEmail && $newEmail !== $user['email']) {
                 if (filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
                     $check = db()->prepare('SELECT id FROM users WHERE email=? AND id!=?');
                     $check->execute([$newEmail, (int)$user['id']]);
-                    if (!$check->fetch()) {
-                        db()->prepare('UPDATE users SET email=? WHERE id=?')->execute([$newEmail, (int)$user['id']]);
-                    } else {
+                    if ($check->fetch()) {
                         session_flash('error', 'Email already in use.');
                         redirect('/?page=account&tab=profile');
                     }
@@ -401,8 +456,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     redirect('/?page=account&tab=profile');
                 }
             }
-            db()->prepare('UPDATE users SET full_name=?, phone=?, bio=?, avatar=? WHERE id=?')
-                ->execute([$_POST['full_name'], $_POST['phone'], $_POST['bio'], $avatarUrl, (int)$user['id']]);
+            db()->prepare('UPDATE users SET full_name=?, email=?, phone=?, street=?, city=?, state=?, zip=?, country=?, bio=?, avatar=? WHERE id=?')
+                ->execute([$_POST['full_name'], $newEmail ?: $user['email'], $_POST['phone'], $_POST['street'] ?? null, $_POST['city'] ?? null, $_POST['state'] ?? null, $_POST['zip'] ?? null, $_POST['country'] ?? 'United States', $_POST['bio'], $avatarUrl, (int)$user['id']]);
             audit('profile_updated', 'users', (string)$user['id']);
             session_flash('notice', 'Profile updated.');
             redirect('/?page=account&tab=profile');
@@ -502,7 +557,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             redirect('/?page=admin&tab=products');
 
-         case 'admin_add_coming_soon':
+        // === SEASONS ===
+        case 'admin_add_season':
+            if (!$user || !is_admin($user)) { abort(403); }
+            db()->prepare("INSERT INTO seasons (name, description) VALUES (?,?)")->execute([$_POST['name'], $_POST['description'] ?? '']);
+            session_flash('notice', 'Season created.');
+            redirect('/?page=admin&tab=seasons');
+
+        case 'admin_toggle_season':
+            if (!$user || !is_admin($user)) { abort(403); }
+            db()->prepare("UPDATE seasons SET is_active = IF(is_active, 0, 1) WHERE id=?")->execute([(int)$_POST['id']]);
+            redirect('/?page=admin&tab=seasons');
+
+        case 'admin_delete_season':
+            if (!$user || !is_admin($user)) { abort(403); }
+            db()->prepare("DELETE FROM seasons WHERE id=?")->execute([(int)$_POST['id']]);
+            session_flash('notice', 'Season deleted.');
+            redirect('/?page=admin&tab=seasons');
+
+        case 'admin_add_season_item':
+            if (!$user || !is_admin($user)) { abort(403); }
+            $seasonId = (int)$_POST['season_id'];
+            $productId = (int)$_POST['product_id'];
+            if ($seasonId && $productId) {
+                db()->prepare("INSERT IGNORE INTO season_items (season_id, product_id) VALUES (?,?)")->execute([$seasonId, $productId]);
+            }
+            redirect('/?page=admin&tab=seasons');
+
+        case 'admin_remove_season_item':
+            if (!$user || !is_admin($user)) { abort(403); }
+            db()->prepare("DELETE FROM season_items WHERE season_id=? AND product_id=?")->execute([(int)$_POST['season_id'], (int)$_POST['product_id']]);
+            redirect('/?page=admin&tab=seasons');
+
+        case 'admin_add_coming_soon':
             if (!$user || !is_admin($user)) { abort(403); }
             $name = trim($_POST['name']);
             $releaseDate = $_POST['release_date'] . ' ' . ($_POST['release_time'] ?? '13:00') . ':00';
@@ -544,26 +631,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             db()->prepare('UPDATE orders SET ' . implode(', ', $updates) . ' WHERE id = ?')->execute($params);
             audit('order_updated', 'orders', (string)$orderId, ['status' => $status]);
 
-            // Send shipped notification email
-            if ($status === 'shipped') {
-                $ord = db()->prepare('SELECT o.*, u.email, u.full_name FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = ?');
-                $ord->execute([$orderId]);
-                $ordData = $ord->fetch();
-                if ($ordData && $ordData['email']) {
-                    $subject = "Your order #{$ordData['order_number']} has shipped!";
-                    $body = "<h2>Good news, " . e($ordData['full_name'] ?: 'Valued Customer') . "!</h2>";
-                    $body .= "<p>Your order <strong>#{$ordData['order_number']}</strong> has been shipped.</p>";
-                    if ($tracking) {
-                        $body .= "<p><strong>Tracking Number:</strong> " . e($tracking) . "</p>";
+            // Update order items (qty, size, color)
+            if (!empty($_POST['item_id'])) {
+                foreach ($_POST['item_id'] as $itemId) {
+                    $itemId = (int)$itemId;
+                    $qty = isset($_POST['item_qty'][$itemId]) ? (int)$_POST['item_qty'][$itemId] : null;
+                    $size = $_POST['item_size'][$itemId] ?? '';
+                    $color = $_POST['item_color'][$itemId] ?? '';
+                    if ($qty !== null) {
+                        $lineTotal = db()->query("SELECT unit_price FROM order_items WHERE id=$itemId")->fetchColumn();
+                        db()->prepare('UPDATE order_items SET quantity=?, size=?, color=?, line_total=? WHERE id=? AND order_id=?')
+                            ->execute([$qty, $size ?: null, $color ?: null, (float)$lineTotal * $qty, $itemId, $orderId]);
                     }
-                    if ($carrier) {
-                        $body .= "<p><strong>Carrier:</strong> " . e($carrier) . "</p>";
-                    }
-                    $body .= "<p><strong>Order Total:</strong> \$" . number_format((float)$ordData['total'], 2) . "</p>";
-                    $body .= "<p>Thank you for your purchase!</p>";
-                    $body .= "<p style='font-size:12px;color:#888'>Suggawayz</p>";
-                    send_email($ordData['email'], $subject, $body);
                 }
+            }
+
+            // Send notification email + in-app alert
+            $ord = db()->prepare('SELECT o.*, u.email, u.full_name, u.id as uid FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = ?');
+            $ord->execute([$orderId]);
+            $ordData = $ord->fetch();
+            if ($ordData && $ordData['email']) {
+                $statusLabels = ['pending'=>'Pending','paid'=>'Paid','processing'=>'Processing','shipped'=>'Shipped','delivered'=>'Delivered','cancelled'=>'Cancelled','refunded'=>'Refunded'];
+                $label = $statusLabels[$status] ?? ucfirst($status);
+                $subject = "Order #{$ordData['order_number']} — {$label}";
+                $body = "<h2>Hello " . e($ordData['full_name'] ?: 'Valued Customer') . ",</h2>";
+                $body .= "<p>Your order <strong>#{$ordData['order_number']}</strong> has been updated to <strong>{$label}</strong>.</p>";
+                if ($tracking) $body .= "<p><strong>Tracking:</strong> " . e($tracking) . "</p>";
+                if ($carrier) $body .= "<p><strong>Carrier:</strong> " . e($carrier) . "</p>";
+                $body .= "<p><strong>Total:</strong> \$" . number_format((float)$ordData['total'], 2) . "</p>";
+                $body .= "<p style='font-size:12px;color:#888'>SUGGAWAYZ</p>";
+                send_email($ordData['email'], $subject, $body);
+
+                // In-app notification
+                $notifMsg = "Order #{$ordData['order_number']} updated to {$label}.";
+                db()->prepare("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?, 'order', ?, ?, ?)")
+                    ->execute([(int)$ordData['uid'], $subject, $notifMsg, '/?page=order-detail&order_id=' . $orderId]);
             }
 
             session_flash('notice', "Order #{$orderId} updated.");
@@ -801,14 +903,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'admin_update_payment':
             if (!$user || !is_admin($user)) { abort(403); }
             $id = (int)$_POST['id'];
+            $current = db()->prepare('SELECT * FROM payment_settings WHERE id=?');
+            $current->execute([$id]);
+            $cur = $current->fetch();
+            $pubKey = $_POST['public_key'] ?? '';
+            $secKey = $_POST['secret_key'] ?? '';
+            $extra = $_POST['extra'] ?? [];
+            if ($pubKey === '' && $cur) $pubKey = $cur['public_key'];
+            if ($secKey === '' && $cur) $secKey = $cur['secret_key'];
+            // Encryption-ready: use encrypt_value()/decrypt_value() when ready
             db()->prepare('UPDATE payment_settings SET enabled=?, sandbox_mode=?, label=?, public_key=?, secret_key=?, extra_settings=? WHERE id=?')
                 ->execute([
                     !empty($_POST['enabled']) ? 1 : 0,
                     !empty($_POST['sandbox_mode']) ? 1 : 0,
                     $_POST['label'],
-                    $_POST['public_key'],
-                    $_POST['secret_key'],
-                    json_encode($_POST['extra'] ?? []),
+                    $pubKey,
+                    $secKey,
+                    json_encode($extra),
                     $id
                 ]);
             session_flash('notice', 'Payment settings updated.');
@@ -819,15 +930,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$user || !is_admin($user)) { abort(403); }
             $code = strtoupper(trim((string)$_POST['code']));
             if (empty($code)) { $code = strtoupper(bin2hex(random_bytes(4))); }
-            db()->prepare('INSERT INTO coupons (code, discount_type, discount_value, min_order_amount, max_uses, starts_at, ends_at, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-                ->execute([$code, $_POST['discount_type'], (float)$_POST['discount_value'], $_POST['min_order_amount'] ? (float)$_POST['min_order_amount'] : null, $_POST['max_uses'] ? (int)$_POST['max_uses'] : null, $_POST['starts_at'] ?: null, $_POST['ends_at'] ?: null, !empty($_POST['active']) ? 1 : 0]);
+            db()->prepare('INSERT INTO coupons (code, discount_type, discount_value, min_order_amount, max_uses, starts_at, ends_at, active, apply_to_total, free_shipping, waive_taxes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$code, $_POST['discount_type'], (float)$_POST['discount_value'], $_POST['min_order_amount'] ? (float)$_POST['min_order_amount'] : null, $_POST['max_uses'] ? (int)$_POST['max_uses'] : null, $_POST['starts_at'] ?: null, $_POST['ends_at'] ?: null, !empty($_POST['active']) ? 1 : 0, !empty($_POST['apply_to_total']) ? 1 : 0, !empty($_POST['free_shipping']) ? 1 : 0, !empty($_POST['waive_taxes']) ? 1 : 0]);
             session_flash('notice', "Coupon {$code} created.");
             redirect('/?page=admin&tab=coupons');
 
         case 'admin_edit_coupon':
             if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE coupons SET code=?, discount_type=?, discount_value=?, min_order_amount=?, max_uses=?, starts_at=?, ends_at=?, active=? WHERE id=?')
-                ->execute([strtoupper(trim((string)$_POST['code'])), $_POST['discount_type'], (float)$_POST['discount_value'], $_POST['min_order_amount'] ? (float)$_POST['min_order_amount'] : null, $_POST['max_uses'] ? (int)$_POST['max_uses'] : null, $_POST['starts_at'] ?: null, $_POST['ends_at'] ?: null, !empty($_POST['active']) ? 1 : 0, (int)$_POST['id']]);
+            db()->prepare('UPDATE coupons SET code=?, discount_type=?, discount_value=?, min_order_amount=?, max_uses=?, starts_at=?, ends_at=?, active=?, apply_to_total=?, free_shipping=?, waive_taxes=? WHERE id=?')
+                ->execute([strtoupper(trim((string)$_POST['code'])), $_POST['discount_type'], (float)$_POST['discount_value'], $_POST['min_order_amount'] ? (float)$_POST['min_order_amount'] : null, $_POST['max_uses'] ? (int)$_POST['max_uses'] : null, $_POST['starts_at'] ?: null, $_POST['ends_at'] ?: null, !empty($_POST['active']) ? 1 : 0, !empty($_POST['apply_to_total']) ? 1 : 0, !empty($_POST['free_shipping']) ? 1 : 0, !empty($_POST['waive_taxes']) ? 1 : 0, (int)$_POST['id']]);
             session_flash('notice', 'Coupon updated.');
             redirect('/?page=admin&tab=coupons');
 
@@ -1023,15 +1134,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // === Shipping ===
         case 'admin_add_shipping':
             if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('INSERT INTO shipping (region, carrier, service_name, base_rate, free_threshold, estimated_days_min, estimated_days_max, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-                ->execute([$_POST['region'], $_POST['carrier'], $_POST['service_name'], (float)$_POST['base_rate'], $_POST['free_threshold'] !== '' ? (float)$_POST['free_threshold'] : null, $_POST['estimated_days_min'] !== '' ? (int)$_POST['estimated_days_min'] : null, $_POST['estimated_days_max'] !== '' ? (int)$_POST['estimated_days_max'] : null, (int)(bool)($_POST['active'] ?? 0)]);
+            db()->prepare('INSERT INTO shipping (region, carrier, service_name, base_rate, per_item_rate, free_threshold, estimated_days_min, estimated_days_max, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$_POST['region'], $_POST['carrier'], $_POST['service_name'], (float)$_POST['base_rate'], (float)($_POST['per_item_rate'] ?? 0), $_POST['free_threshold'] !== '' ? (float)$_POST['free_threshold'] : null, $_POST['estimated_days_min'] !== '' ? (int)$_POST['estimated_days_min'] : null, $_POST['estimated_days_max'] !== '' ? (int)$_POST['estimated_days_max'] : null, (int)(bool)($_POST['active'] ?? 0)]);
             session_flash('notice', 'Shipping method added.');
             redirect('/?page=admin&tab=shipping');
 
         case 'admin_edit_shipping':
             if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE shipping SET region=?, carrier=?, service_name=?, base_rate=?, free_threshold=?, estimated_days_min=?, estimated_days_max=?, active=? WHERE id=?')
-                ->execute([$_POST['region'], $_POST['carrier'], $_POST['service_name'], (float)$_POST['base_rate'], $_POST['free_threshold'] !== '' ? (float)$_POST['free_threshold'] : null, $_POST['estimated_days_min'] !== '' ? (int)$_POST['estimated_days_min'] : null, $_POST['estimated_days_max'] !== '' ? (int)$_POST['estimated_days_max'] : null, (int)(bool)($_POST['active'] ?? 0), (int)$_POST['id']]);
+            db()->prepare('UPDATE shipping SET region=?, carrier=?, service_name=?, base_rate=?, per_item_rate=?, free_threshold=?, estimated_days_min=?, estimated_days_max=?, active=? WHERE id=?')
+                ->execute([$_POST['region'], $_POST['carrier'], $_POST['service_name'], (float)$_POST['base_rate'], (float)($_POST['per_item_rate'] ?? 0), $_POST['free_threshold'] !== '' ? (float)$_POST['free_threshold'] : null, $_POST['estimated_days_min'] !== '' ? (int)$_POST['estimated_days_min'] : null, $_POST['estimated_days_max'] !== '' ? (int)$_POST['estimated_days_max'] : null, (int)(bool)($_POST['active'] ?? 0), (int)$_POST['id']]);
             session_flash('notice', 'Shipping method updated.');
             redirect('/?page=admin&tab=shipping');
 
@@ -1462,6 +1573,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             redirect('/?page=admin&tab=inbox&subtab=compose');
 
+        case 'admin_change_email_quota':
+            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
+            $email = $_POST['email'] ?? '';
+            $quota = ((int)($_POST['quota'] ?? 1024)) * 1048576;
+            if ($email) {
+                try {
+                    $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
+                    $sqldb->prepare("UPDATE mailbox SET quota=? WHERE username=?")->execute([$quota, $email]);
+                    session_flash('notice', "Quota updated for $email");
+                } catch (Exception $e) {
+                    session_flash('error', 'Failed to update quota: ' . $e->getMessage());
+                }
+            }
+            redirect('/?page=admin&tab=inbox&subtab=accounts');
+
         case 'admin_delete_message':
             if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
             $mailbox = $_POST['mailbox'] ?? '';
@@ -1507,6 +1633,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             redirect('/?page=admin&tab=inbox&subtab=inbox&mailbox=' . urlencode($mailbox) . '&folder=' . urlencode($folder) . '&_=' . time());
+
+        case 'upload_cashapp_receipt':
+            if (!$user) { redirect('/?page=login'); }
+            $orderId = (int)($_POST['order_id'] ?? 0);
+            $txId = trim((string)($_POST['transaction_id'] ?? ''));
+            $order = db()->prepare('SELECT o.*, (SELECT provider FROM payments WHERE order_id=o.id LIMIT 1) as payment_method FROM orders o WHERE o.id=? AND o.user_id=?');
+            $order->execute([$orderId, (int)$user['id']]);
+            $orderData = $order->fetch();
+            if (!$orderData || $orderData['payment_method'] !== 'cash_app') {
+                session_flash('error', 'Invalid order.');
+                redirect('/?page=order-confirmed&order=' . ($_GET['order'] ?? ''));
+            }
+            if ($txId) {
+                db()->prepare("UPDATE payments SET provider_reference=? WHERE order_id=? AND provider='cash_app'")->execute([$txId, $orderId]);
+            }
+            if (!empty($_FILES['receipt']) && $_FILES['receipt']['error'] === UPLOAD_ERR_OK) {
+                $ext = strtolower(pathinfo($_FILES['receipt']['name'], PATHINFO_EXTENSION));
+                if (in_array($ext, ['jpg','jpeg','png','gif','webp'])) {
+                    $filename = 'cashapp_' . $orderId . '_' . time() . '.' . $ext;
+                    $dest = dirname(__DIR__) . '/storage/receipts/' . $filename;
+                    if (!is_dir(dirname($dest))) mkdir(dirname($dest), 0755, true);
+                    if (move_uploaded_file($_FILES['receipt']['tmp_name'], $dest)) {
+                        db()->prepare("UPDATE payments SET encrypted_payload=? WHERE order_id=? AND provider='cash_app'")->execute([json_encode(['receipt' => $filename, 'transaction_id' => $txId, 'submitted_at' => date('Y-m-d H:i:s')]), $orderId]);
+                        db()->prepare("UPDATE orders SET notes=CONCAT(IFNULL(notes,''), '\n[CASH APP RECEIPT UPLOADED] TX: ', ?) WHERE id=?")->execute([$txId, $orderId]);
+                    }
+                }
+            }
+            session_flash('notice', 'Payment proof submitted. We will verify and update your order status shortly.');
+            redirect('/?page=order-confirmed&order=' . e($orderData['order_number']));
 
         case 'admin_security_fix':
             if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
@@ -1590,6 +1745,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             redirect('/?page=admin&tab=security');
 
+        case 'cancel_membership':
+            if (!$user) { redirect('/?page=login'); }
+            db()->prepare("DELETE FROM user_memberships WHERE user_id=? AND status='active'")->execute([(int)$user['id']]);
+            session_flash('notice', 'Membership cancelled.');
+            redirect('/?page=account');
+
+        case 'toggle_auto_pay':
+            if (!$user) { redirect('/?page=login'); }
+            db()->prepare("UPDATE user_memberships SET auto_pay = IF(auto_pay, 0, 1) WHERE user_id=? AND status='active'")->execute([(int)$user['id']]);
+            session_flash('notice', 'Auto-renew toggled.');
+            redirect('/?page=account');
+
+        case 'update_member_payment':
+            if (!$user) { redirect('/?page=login'); }
+            $pm = $_POST['payment_method'] ?? '';
+            db()->prepare("UPDATE user_memberships SET last_payment_method=? WHERE user_id=? AND status='active'")->execute([$pm, (int)$user['id']]);
+            session_flash('notice', 'Payment method updated to ' . ucfirst(str_replace('_', ' ', $pm)) . '.');
+            redirect('/?page=account&tab=orders');
+
         case 'add_membership_to_cart':
             if (!$user) { session_flash('error', 'Please log in.'); redirect('/?page=login'); }
             $planId = (int)($_POST['plan_id'] ?? 0);
@@ -1609,6 +1783,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             session_flash('notice', 'Membership added to cart.');
             redirect('/?page=cart');
 
+        case 'reorder':
+            if (!$user) { session_flash('error', 'Please log in.'); redirect('/?page=login'); }
+            $orderId = (int)($_POST['order_id'] ?? 0);
+            $order = db()->prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?');
+            $order->execute([$orderId, (int)$user['id']]);
+            if (!$order->fetch()) { session_flash('error', 'Order not found.'); redirect('/?page=account&tab=orders'); }
+            $items = db()->prepare('SELECT * FROM order_items WHERE order_id = ?');
+            $items->execute([$orderId]);
+            $count = 0;
+            foreach ($items->fetchAll() as $item) {
+                if ($item['product_id']) {
+                    add_to_cart((int)$item['product_id'], (int)$item['quantity'], $item['size'], $item['color']);
+                    $count++;
+                }
+            }
+            session_flash('notice', "{$count} item(s) added to your cart.");
+            redirect('/?page=cart');
+
         case 'join_membership':
             if (!$user) { session_flash('error', 'Please log in to join.'); redirect('/?page=login'); }
             $planId = (int)($_POST['plan_id'] ?? 0);
@@ -1620,11 +1812,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $existing = db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active'");
             $existing->execute([(int)$user['id']]);
             if ($existing->fetch()) { session_flash('error', 'You already have an active membership.'); redirect('/?page=membership'); }
-            db()->prepare("INSERT INTO user_memberships (user_id, plan_id, status, auto_pay, start_date, end_date) VALUES (?,?,'active',?,NOW(),DATE_ADD(NOW(), INTERVAL 1 MONTH))")
-                ->execute([(int)$user['id'], $planId, $autoPay ? 1 : 0]);
+            $lastPm = ''; // could be from session or cart
+            db()->prepare("INSERT INTO user_memberships (user_id, plan_id, status, auto_pay, last_payment_method, start_date, end_date) VALUES (?,?,'active',?,?,NOW(),DATE_ADD(NOW(), INTERVAL 1 MONTH))")
+                ->execute([(int)$user['id'], $planId, $autoPay ? 1 : 0, $lastPm]);
             $invNum = 'INV-MEM-' . time();
-            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")
-                ->execute([(int)$user['id'], $invNum, (float)$planData['price']]);
+            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, payment_method, status, due_date) VALUES (?,?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")
+                ->execute([(int)$user['id'], $invNum, (float)$planData['price'], $lastPm]);
             session_flash('notice', 'Welcome to the Sugga Gang! 🎉 Your first invoice has been generated.');
             redirect('/?page=membership');
 
@@ -1686,7 +1879,7 @@ switch ($page) {
         }
         $featured = db()->query('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active" AND p.is_featured = 1 ORDER BY p.created_at DESC LIMIT 6')->fetchAll();
         $newDrops = db()->query('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active" AND p.is_new = 1 ORDER BY p.created_at DESC LIMIT 4')->fetchAll();
-        $collections = db()->query('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order')->fetchAll();
+        $collections = db()->query("SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.status = 'active') as product_count FROM categories c WHERE c.active = 1 HAVING product_count > 0 ORDER BY c.sort_order")->fetchAll();
         $comingSoon = db()->query('SELECT * FROM coming_soon ORDER BY release_date ASC LIMIT 6')->fetchAll();
         $hero_class = 'hero-home';
         $seo_settings = db()->prepare('SELECT * FROM seo_settings WHERE page_key = ?')->execute(['home']) ? db()->query('SELECT * FROM seo_settings WHERE page_key = "home"')->fetch() : null;
@@ -1704,11 +1897,24 @@ switch ($page) {
         $perPage = 12;
         $offset = ($page - 1) * $perPage;
 
+        // Check if user is a member
+        $isMember = false;
+        if ($user) {
+            $isMember = in_array($user['role'], ['webmaster', 'super_admin']);
+            if (!$isMember) {
+                $memCheck = db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active' LIMIT 1");
+                $memCheck->execute([(int)$user['id']]);
+                $isMember = (bool)$memCheck->fetch();
+            }
+        }
+        $memberFilter = $isMember ? '' : ' AND (c.member_only IS NULL OR c.member_only = 0)';
+
         // Count total
-        $countSql = 'SELECT COUNT(*) FROM products p WHERE p.status = "active"';
+        $countSql = 'SELECT COUNT(*) FROM products p LEFT JOIN categories c ON c.id = p.category_id WHERE p.status = "active"';
         $countParams = [];
         if ($categorySlug) { $countSql .= ' AND p.category_id = (SELECT id FROM categories WHERE slug = ?)'; $countParams[] = $categorySlug; }
         if ($search) { $countSql .= ' AND (p.name LIKE ? OR p.description LIKE ?)'; $countParams[] = "%{$search}%"; $countParams[] = "%{$search}%"; }
+        $countSql .= $memberFilter;
         $totalProducts = (int)db()->prepare($countSql)->execute($countParams) ? db()->query('SELECT FOUND_ROWS()')->fetchColumn() : 0;
         $stmt2 = db()->prepare($countSql); $stmt2->execute($countParams);
         $totalProducts = (int)$stmt2->fetchColumn();
@@ -1718,6 +1924,7 @@ switch ($page) {
         $params = [];
         if ($categorySlug) { $sql .= ' AND p.category_id = (SELECT id FROM categories WHERE slug = ?)'; $params[] = $categorySlug; }
         if ($search) { $sql .= ' AND (p.name LIKE ? OR p.description LIKE ?)'; $params[] = "%{$search}%"; $params[] = "%{$search}%"; }
+        $sql .= $memberFilter;
         $sql .= match($sort) {
             'price-low' => ' ORDER BY COALESCE(p.sale_price, p.price) ASC',
             'price-high' => ' ORDER BY COALESCE(p.sale_price, p.price) DESC',
@@ -1728,7 +1935,8 @@ switch ($page) {
         $stmt = db()->prepare($sql);
         $stmt->execute($params);
         $allProducts = $stmt->fetchAll();
-        $categories = db()->query('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order')->fetchAll();
+        $catSql = $isMember ? 'SELECT * FROM categories WHERE active = 1 ORDER BY sort_order' : 'SELECT * FROM categories WHERE active = 1 AND (member_only IS NULL OR member_only = 0) ORDER BY sort_order';
+        $categories = db()->query($catSql)->fetchAll();
         $seo_settings = db()->query('SELECT * FROM seo_settings WHERE page_key = "shop"')->fetch();
         $seo_title = $seo_settings['meta_title'] ?? null;
         $seo_description = $seo_settings['meta_description'] ?? null;
@@ -1755,18 +1963,18 @@ switch ($page) {
         $images = json_decode($product['images'] ?? '[]', true);
         $sizes = json_decode($product['sizes'] ?? '[]', true);
         $colors = json_decode($product['colors'] ?? '[]', true);
-        $reviews = db()->prepare('SELECT r.*, u.full_name, u.avatar FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.product_id = ? AND r.is_approved = 1 ORDER BY r.created_at DESC')->execute([(int)$product['id']]) ? db()->query('SELECT r.*, u.full_name, u.avatar FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.product_id = 0')->fetchAll() : [];
+        $reviews = db()->query("SELECT r.*, u.full_name, u.avatar FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.product_id = " . (int)$product['id'] . " AND r.is_approved = 1 ORDER BY r.created_at DESC")->fetchAll();
         $related = db()->prepare('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.category_id = ? AND p.id != ? AND p.status = "active" LIMIT 4');
         $related->execute([(int)$product['category_id'], (int)$product['id']]);
         $relatedProducts = $related->fetchAll();
-        $seo_title = $product['meta_title'] ?: $product['name'] . ' — SUGGAWAYZ';
+        $seo_title = $product['meta_title'] ?: $product['name'] . ' - SUGGAWAYZ';
         $seo_description = $product['meta_description'] ?: $product['seo_description'];
         $hero_class = 'hero-product';
         $content = render_product_detail($product, $images, $sizes, $colors, $reviews, $relatedProducts, $user);
         break;
 
     case 'collections':
-        $collections = db()->query('SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.status = "active") as product_count FROM categories c WHERE c.active = 1 ORDER BY c.sort_order')->fetchAll();
+        $collections = db()->query("SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.status = 'active') as product_count FROM categories c WHERE c.active = 1 HAVING product_count > 0 ORDER BY c.sort_order")->fetchAll();
         $seo_settings = db()->query('SELECT * FROM seo_settings WHERE page_key = "collections"')->fetch();
         $seo_title = $seo_settings['meta_title'] ?? null;
         $seo_description = $seo_settings['meta_description'] ?? null;
@@ -1787,7 +1995,7 @@ switch ($page) {
 
     case 'about':
         $page = db()->query("SELECT * FROM pages WHERE slug = 'about' AND published = 1")->fetch();
-        $seo_title = 'About — SUGGAWAYZ';
+        $seo_title = 'About - SUGGAWAYZ';
         $hero_content = '<p class="eyebrow">Our Story</p><h1>About</h1>';
         $content = render_about($page);
         break;
@@ -1798,7 +2006,7 @@ switch ($page) {
         break;
 
     case 'faq':
-        $faqs = db()->query('SELECT * FROM faq_items WHERE published = 1 ORDER BY sort_order')->fetchAll();
+        $faqs = db()->query('SELECT * FROM faq_items WHERE published = 1 ORDER BY sort_order LIMIT 50')->fetchAll();
         $categories = db()->query('SELECT DISTINCT category FROM faq_items WHERE published = 1 AND category IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN);
         $hero_content = '<p class="eyebrow">Help Center</p><h1>FAQ</h1>';
         $content = render_faq($faqs, $categories);
@@ -1897,20 +2105,23 @@ case 'shipping':
         $subtotal = cart_total();
         $couponCode = $_SESSION['coupon'] ?? null;
         $discount = 0.0;
+        $applyToTotal = false;
+        $freeShipping = false;
+        $waiveTaxes = false;
         if ($couponCode) {
             $result = apply_coupon($couponCode, $subtotal);
-            if ($result['success']) $discount = $result['discount'];
+            if ($result['success']) { $discount = (float)$result['discount']; $applyToTotal = !empty($result['apply_to_total']); $freeShipping = !empty($result['free_shipping']); $waiveTaxes = !empty($result['waive_taxes']); }
             else { unset($_SESSION['coupon']); $couponCode = null; }
         }
         // Member discount
         $memberDiscount = 0;
         if ($user) {
-            $memberDiscount = get_member_discount((int)$user['id'], $subtotal);
+            $memberDiscount = (float)get_member_discount((int)$user['id'], $subtotal);
             $discount = max($discount, $memberDiscount);
         }
-        $shippingMethods = db()->query('SELECT * FROM shipping WHERE region = "United States" AND active = 1')->fetchAll();
+        $shippingMethods = db()->query('SELECT * FROM shipping WHERE active = 1 ORDER BY region, carrier')->fetchAll();
         $hero_content = '<p class="eyebrow">Your Cart</p><h1>Shopping Cart</h1>';
-        $content = render_cart($items, $subtotal, $discount, $couponCode, $shippingMethods, $user ? (bool)db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active'")->execute([(int)$user['id']]) && db()->query("SELECT id FROM user_memberships WHERE user_id=".(int)$user['id']." AND status='active'")->fetch() : false);
+        $content = render_cart($items, $subtotal, $discount, $couponCode, $shippingMethods, $user ? (bool)db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active'")->execute([(int)$user['id']]) && db()->query("SELECT id FROM user_memberships WHERE user_id=".(int)$user['id']." AND status='active'")->fetch() : false, $applyToTotal, $freeShipping, $waiveTaxes);
         break;
 
     case 'checkout':
@@ -1921,23 +2132,26 @@ case 'shipping':
         $subtotal = cart_total();
         $couponCode = $_SESSION['coupon'] ?? null;
         $discount = 0.0;
+        $applyToTotal = false;
+        $waiveTaxes = false;
         if ($couponCode) {
             $result = apply_coupon($couponCode, $subtotal);
-            if ($result['success']) $discount = $result['discount'];
+            if ($result['success']) { $discount = (float)$result['discount']; $applyToTotal = !empty($result['apply_to_total']); $waiveTaxes = !empty($result['waive_taxes']); }
         }
         $taxRate = config('app.tax_rate', 8.25);
-        $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
-        $shippingMethods = db()->query('SELECT * FROM shipping WHERE region = "United States" AND active = 1')->fetchAll();
+        $tax = $waiveTaxes ? 0 : ($applyToTotal && $discount > 0 ? round($subtotal * ($taxRate / 100), 2) : round(($subtotal - $discount) * ($taxRate / 100), 2));
+        $shippingMethods = db()->query('SELECT * FROM shipping WHERE active = 1 ORDER BY region, carrier')->fetchAll();
         $hero_content = '<p class="eyebrow">Checkout</p><h1>Complete Your Order</h1>';
         $content = render_checkout($items, $addresses, $subtotal, $discount, $tax, $shippingMethods, $user);
         break;
 
     case 'order-confirmed':
         $orderNumber = $_GET['order'] ?? '';
+        if (!$orderNumber) { $hero_content = '<p class="eyebrow">Error</p><h1>Order Not Found</h1>'; $content = '<div class="panel" style="text-align:center;padding:40px"><h2>No Order Number</h2><p style="margin:12px 0">No order number was provided. If you just placed an order, please check your account dashboard.</p><a href="/?page=account&tab=orders" class="button primary">View Orders</a></div>'; break; }
         $stmt = db()->prepare('SELECT o.*, (SELECT provider FROM payments WHERE order_id = o.id LIMIT 1) as payment_method FROM orders o WHERE o.order_number = ?');
         $stmt->execute([$orderNumber]);
         $order = $stmt->fetch();
-        if (!$order) abort(404);
+        if (!$order) { $hero_content = '<p class="eyebrow">Error</p><h1>Order Not Found</h1>'; $content = '<div class="panel" style="text-align:center;padding:40px"><h2>Order Not Found</h2><p style="margin:12px 0">We could not find an order with that number. It may have been removed or the link may be incorrect.</p><a href="/?page=account&tab=orders" class="button primary">View Orders</a></div>'; break; }
         $orderItems = db()->prepare('SELECT * FROM order_items WHERE order_id = ?')->execute([(int)$order['id']]) ? db()->query('SELECT * FROM order_items WHERE order_id = ' . (int)$order['id'])->fetchAll() : [];
         $hero_content = '<p class="eyebrow">Success</p><h1>Order Confirmed</h1>';
         $content = render_order_confirmed($order, $orderItems);
@@ -1956,14 +2170,33 @@ case 'shipping':
         $membership = db()->prepare("SELECT m.*, p.name as plan_name, p.price, p.benefits FROM user_memberships m JOIN membership_plans p ON p.id=m.plan_id WHERE m.user_id=? AND m.status='active' LIMIT 1");
         $membership->execute([(int)$user['id']]);
         $userMembership = $membership->fetch() ?: null;
-        // Auto-renewal check: if membership expired, generate new invoice
+        // Auto-renewal check: if membership expired, generate new invoice with last payment method
         if ($userMembership && $userMembership['end_date'] && strtotime($userMembership['end_date']) < time()) {
             $invNum = 'INV-MEM-' . time() . '-' . $user['id'];
-            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")
-                ->execute([(int)$user['id'], $invNum, (float)$userMembership['price']]);
+            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, payment_method, status, due_date) VALUES (?,?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")
+                ->execute([(int)$user['id'], $invNum, (float)$userMembership['price'], $userMembership['last_payment_method'] ?? '']);
             db()->prepare("UPDATE user_memberships SET start_date=NOW(), end_date=DATE_ADD(NOW(), INTERVAL 1 MONTH) WHERE id=?")->execute([(int)$userMembership['id']]);
         }
-        $content = render_account_dashboard($user, $tab, $recentOrders, $orders, $addresses, $wishlist, $devices, $notifications, $userMembership);
+        // Get membership invoices
+        $memberInvoices = [];
+        if ($userMembership) {
+            $inv = db()->prepare("SELECT * FROM membership_invoices WHERE user_id=? ORDER BY created_at DESC LIMIT 10");
+            $inv->execute([(int)$user['id']]);
+            $memberInvoices = $inv->fetchAll();
+        }
+        $content = render_account_dashboard($user, $tab, $recentOrders, $orders, $addresses, $wishlist, $devices, $notifications, $userMembership, $memberInvoices);
+        break;
+
+    case 'order-detail':
+        if (!$user) { session_flash('error', 'Please log in.'); redirect('/?page=login'); }
+        $orderId = (int)($_GET['order_id'] ?? 0);
+        $order = db()->prepare('SELECT o.*, (SELECT provider FROM payments WHERE order_id = o.id LIMIT 1) as payment_method FROM orders o WHERE o.id = ? AND o.user_id = ?');
+        $order->execute([$orderId, (int)$user['id']]);
+        $orderData = $order->fetch();
+        if (!$orderData) abort(404);
+        $orderItems = db()->prepare('SELECT * FROM order_items WHERE order_id = ?')->execute([$orderId]) ? db()->query('SELECT * FROM order_items WHERE order_id = ' . $orderId)->fetchAll() : [];
+        $hero_content = '<p class="eyebrow">Account</p><h1>Order Details</h1>';
+        $content = render_order_detail($orderData, $orderItems);
         break;
 
     case 'admin':
@@ -1977,15 +2210,23 @@ case 'shipping':
         $orderSql = 'SELECT o.*, u.full_name, u.email as customer_email FROM orders o LEFT JOIN users u ON u.id = o.user_id';
         $orderParams = [];
         if ($orderSearch) {
-            $orderSql .= ' WHERE (o.order_number LIKE ? OR u.full_name LIKE ? OR u.email LIKE ? OR u.username LIKE ? OR o.id = ? OR o.id IN (SELECT order_id FROM payments WHERE provider_reference LIKE ?))';
-            $s = "%{$orderSearch}%";
-            $orderParams = [$s, $s, $s, $s, is_numeric($orderSearch) ? (int)$orderSearch : 0, $s];
+            $statuses = ['pending','paid','processing','shipped','delivered','cancelled','refunded'];
+            if (in_array($orderSearch, $statuses)) {
+                $orderSql .= ' WHERE o.status = ?';
+                $orderParams = [$orderSearch];
+            } else {
+                $orderSql .= ' WHERE (o.order_number LIKE ? OR u.full_name LIKE ? OR u.email LIKE ? OR u.username LIKE ? OR o.id = ? OR o.id IN (SELECT order_id FROM payments WHERE provider_reference LIKE ?))';
+                $s = "%{$orderSearch}%";
+                $orderParams = [$s, $s, $s, $s, is_numeric($orderSearch) ? (int)$orderSearch : 0, $s];
+            }
         }
         $allowedOrderBy = ['created_at', 'total', 'status', 'order_number'];
         if (!in_array($orderBy, $allowedOrderBy)) $orderBy = 'created_at';
         if (!in_array(strtoupper($orderDir), ['ASC', 'DESC'])) $orderDir = 'DESC';
         $orderSql .= " ORDER BY o.{$orderBy} {$orderDir} LIMIT 100";
-        $allOrders = db()->prepare($orderSql)->execute($orderParams) ? db()->query($orderSql)->fetchAll() : [];
+        $stmt = db()->prepare($orderSql);
+        $stmt->execute($orderParams);
+        $allOrders = $stmt->fetchAll();
         $allCustomers = db()->query('SELECT u.*, (SELECT COUNT(*) FROM orders WHERE user_id = u.id) as total_orders FROM users u WHERE u.is_employee=0 AND u.is_deleted=0 ORDER BY u.created_at DESC LIMIT 100')->fetchAll();
         $allEmployees = db()->query('SELECT u.*, a.permission_level FROM users u LEFT JOIN admins a ON a.user_id = u.id WHERE u.is_employee=1 ORDER BY u.created_at DESC')->fetchAll();
         $categories = db()->query('SELECT * FROM categories ORDER BY sort_order')->fetchAll();
@@ -2007,7 +2248,8 @@ case 'shipping':
         if ($openPosSession) {
             $posTransactions = db()->query('SELECT * FROM pos_transactions WHERE pos_session_id = ' . (int)$openPosSession['id'] . ' ORDER BY created_at ASC')->fetchAll();
         }
-        $todos = db()->query('SELECT * FROM todos ORDER BY sort_order ASC, created_at DESC')->fetchAll();
+        $allTodos = db()->query('SELECT * FROM todos WHERE is_active = 1 ORDER BY is_completed ASC, sort_order ASC, created_at DESC')->fetchAll();
+        $todos = array_filter($allTodos, fn($t) => !$t['is_completed']);
         $content = render_admin_dashboard($user, $tab, $stats, $allProducts, $allOrders, $allCustomers, $categories, $allEmployees, $inventory, $locations, $reorderItems, $lowStockProducts, $paymentSettings, $coupons, $auditLogs, $signInLogs, $posSessions, $openPosSession, $posTransactions, $orderSearch, $todos);
         break;
 
@@ -2032,9 +2274,30 @@ case 'shipping':
         $content = render_webmaster_page($webmaster);
         break;
 
+    case 'seasons':
+        $seasonId = (int)($_GET['id'] ?? 0);
+        if ($seasonId) {
+            $season = db()->prepare("SELECT * FROM seasons WHERE id=? AND is_active=1");
+            $season->execute([$seasonId]);
+            $s = $season->fetch();
+            if (!$s) { abort(404); }
+            $products = db()->query("SELECT p.*, i.stock_quantity FROM season_items si JOIN products p ON p.id=si.product_id LEFT JOIN inventory i ON i.product_id=p.id WHERE si.season_id=$seasonId AND p.status='active' ORDER BY si.sort_order")->fetchAll();
+            $seo_title = $s['name'] . ' - Seasons';
+            $hero_class = 'hero-sub';
+            $hero_content = '<p class="eyebrow">Season</p><h1>' . e($s['name']) . '</h1><p>' . e($s['description'] ?? '') . '</p>';
+            $content = render_shop($products, [], null, 'newest', '', 1, 1);
+        } else {
+            $allSeasons = db()->query('SELECT s.*, (SELECT COUNT(*) FROM season_items WHERE season_id=s.id) as item_count FROM seasons s WHERE s.is_active=1 ORDER BY s.sort_order, s.name')->fetchAll();
+            $seo_title = 'Limited Editions';
+            $hero_class = 'hero-sub';
+            $content = render_seasons_page($allSeasons);
+        }
+        break;
+
     case 'bug-report':
         $seo_title = 'Report a Bug';
         $hero_class = 'hero-sub';
+        $seo_description = 'Report a bug or issue with the site.';
         $content = render_bug_report_form();
         break;
 

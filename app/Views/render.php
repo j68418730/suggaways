@@ -625,7 +625,7 @@ function render_blog(array $posts): string
     <section class="blog-grid">
       <?php foreach ($posts as $post): ?>
         <a href="/?page=blog-post&slug=<?= e($post['slug']) ?>" class="panel blog-card">
-          <div class="blog-image" style="background:linear-gradient(145deg,rgba(0,140,255,0.2),rgba(0,0,0,0.4)),url('/assets/img/background.png') center/cover;height:200px"></div>
+          <div class="blog-image" style="background:linear-gradient(145deg,'<?= e($post["gradient_a"] ?? "rgba(0,140,255,0.2)") ?>','<?= e($post["gradient_b"] ?? "rgba(0,0,0,0.4)") ?>'),url('<?= e($post["image"] ?: "/assets/img/background.png") ?>') center/cover;height:200px"></div>
           <div class="blog-info">
             <small><?= e(date('F j, Y', strtotime($post['published_at']))) ?></small>
             <h3><?= e($post['title']) ?></h3>
@@ -735,13 +735,26 @@ function render_forgot_password(): string
     return ob_get_clean();
 }
 
-function render_cart(array $items, float $subtotal, float $discount, ?string $couponCode, array $shippingMethods, bool $isMember = false): string
-{
-    $taxRate = config('app.tax_rate', 8.25);
-    $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
-    $shipping = $subtotal >= config('app.shipping_threshold', 75) ? 0 : ($shippingMethods[0]['base_rate'] ?? 7.99);
-    $total = $subtotal - $discount + $tax + (float)$shipping;
 
+function render_cart(array $items, float $subtotal, float $discount, ?string $couponCode, array $shippingMethods, bool $isMember = false, bool $applyToTotal = false, bool $freeShipping = false, bool $waiveTaxes = false): string
+{
+    $itemCount = array_sum(array_column($items, 'quantity'));
+    $taxRate = config('app.tax_rate', 8.25);
+    if ($applyToTotal && $discount > 0) {
+        $tax = $waiveTaxes ? 0 : round($subtotal * ($taxRate / 100), 2);
+        $first = $shippingMethods[0] ?? [];
+        $base = $first['base_rate'] ?? 7.99;
+        $perItem = $first['per_item_rate'] ?? 0;
+        $shipCost = ($freeShipping || $subtotal >= config('app.shipping_threshold', 75)) ? 0 : ($base + ($perItem * $itemCount));
+        $total = $subtotal + $tax + (float)$shipCost - $discount;
+    } else {
+        $tax = $waiveTaxes ? 0 : round(($subtotal - $discount) * ($taxRate / 100), 2);
+        $first = $shippingMethods[0] ?? [];
+        $base = $first['base_rate'] ?? 7.99;
+        $perItem = $first['per_item_rate'] ?? 0;
+        $shipCost = ($freeShipping || $subtotal >= config('app.shipping_threshold', 75)) ? 0 : ($base + ($perItem * $itemCount));
+        $total = $subtotal - $discount + $tax + (float)$shipCost;
+    }
     ob_start(); ?>
     <?php if (empty($items)): ?>
       <div class="panel" style="text-align:center">
@@ -763,17 +776,47 @@ function render_cart(array $items, float $subtotal, float $discount, ?string $co
                 <?php if (!empty($item['slug'])): ?>
                   <p><a href="/?page=product&slug=<?= e($item['slug']) ?>">View product</a></p>
                 <?php endif; ?>
-                <?php if ($item['size']): ?><p>Size: <?= e($item['size']) ?></p><?php endif; ?>
-                <?php if ($item['color']): ?><p>Color: <?= e($item['color']) ?></p><?php endif; ?>
+                <?php $availSizes = !empty($item['sizes']) ? json_decode($item['sizes'], true) : []; ?>
+                <?php if (!empty($availSizes)): ?>
+                  <form method="post" class="inline-form" style="gap:4px;flex-wrap:wrap">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="update_cart">
+                    <input type="hidden" name="key" value="<?= e($key) ?>">
+                    <input type="hidden" name="qty" value="<?= (int)$item['quantity'] ?>">
+                    <label style="font-size:11px">Size <select name="size" onchange="this.form.submit()" style="padding:3px 6px;font-size:11px">
+                      <?php foreach ($availSizes as $s): ?>
+                        <option value="<?= e($s) ?>" <?= ($item['size'] ?? '') === $s ? 'selected' : '' ?>><?= e($s) ?></option>
+                      <?php endforeach; ?>
+                    </select></label>
+                  </form>
+                <?php elseif ($item['size']): ?>
+                  <span style="font-size:11px;color:var(--text2)">Size: <?= e($item['size']) ?></span>
+                <?php endif; ?>
+                <?php $availColors = !empty($item['colors']) ? json_decode($item['colors'], true) : []; ?>
+                <?php if (!empty($availColors)): ?>
+                  <form method="post" class="inline-form" style="gap:4px;flex-wrap:wrap">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="update_cart">
+                    <input type="hidden" name="key" value="<?= e($key) ?>">
+                    <input type="hidden" name="qty" value="<?= (int)$item['quantity'] ?>">
+                    <label style="font-size:11px">Color <select name="color" onchange="this.form.submit()" style="padding:3px 6px;font-size:11px">
+                      <?php foreach ($availColors as $c): ?>
+                        <option value="<?= e($c) ?>" <?= ($item['color'] ?? '') === $c ? 'selected' : '' ?>><?= e($c) ?></option>
+                      <?php endforeach; ?>
+                    </select></label>
+                  </form>
+                <?php elseif ($item['color']): ?>
+                  <span style="font-size:11px;color:var(--text2)">Color: <?= e($item['color']) ?></span>
+                <?php endif; ?>
                 <p class="cart-item-price">$<?= e(number_format((float)$item['price'], 2)) ?></p>
               </div>
               <div class="cart-item-qty">
-                <form method="post" class="inline-form">
+                <form method="post" class="inline-form" style="gap:2px">
                   <?= csrf_field() ?>
                   <input type="hidden" name="action" value="update_cart">
-                  <label>-</label>
-                  <input type="number" name="quantity[<?= e($key) ?>]" value="<?= (int)$item['quantity'] ?>" min="0" max="99" onchange="this.form.submit()">
-                  <button type="submit" class="button" style="padding:6px 12px;min-height:auto">Update</button>
+                  <button type="submit" name="quantity[<?= e($key) ?>]" value="<?= max(0, (int)$item['quantity'] - 1) ?>" class="button" style="padding:4px 10px;min-height:auto;font-size:14px" title="Decrease">-</button>
+                  <input type="number" name="quantity[<?= e($key) ?>]" value="<?= (int)$item['quantity'] ?>" min="0" max="99" style="width:50px;text-align:center;padding:4px;font-size:13px" onchange="this.form.submit()">
+                  <button type="submit" name="quantity[<?= e($key) ?>]" value="<?= min(99, (int)$item['quantity'] + 1) ?>" class="button" style="padding:4px 10px;min-height:auto;font-size:14px" title="Increase">+</button>
                 </form>
               </div>
               <div class="cart-item-total">
@@ -793,12 +836,12 @@ function render_cart(array $items, float $subtotal, float $discount, ?string $co
           <h3>Order Summary</h3>
           <div class="summary-row"><span>Subtotal</span><span>$<?= e(number_format($subtotal, 2)) ?></span></div>
           <?php if ($discount > 0): ?>
-            <div class="summary-row discount"><span><?= $isMember && $subtotal >= 75 ? '🔥 Member 15% off' : 'Discount' ?><?= $couponCode ? ' ('.e($couponCode).')' : '' ?></span><span>-$<?= e(number_format($discount, 2)) ?></span></div>
+            <div class="summary-row discount"><span><?= $isMember && $subtotal >= 75 ? 'Member 15% off' : 'Discount' ?><?= $couponCode ? ' ('.e($couponCode).')' : '' ?></span><span>-$<?= e(number_format($discount, 2)) ?></span></div>
           <?php elseif ($isMember && $subtotal >= 75): ?>
-            <div class="summary-row discount"><span>🔥 Member 15% off</span><span>-$<?= e(number_format(round($subtotal*0.15,2), 2)) ?></span></div>
+            <div class="summary-row discount"><span>Member 15% off</span><span>-$<?= e(number_format(round($subtotal*0.15,2), 2)) ?></span></div>
           <?php endif; ?>
           <div class="summary-row"><span>Tax (<?= e((string)$taxRate) ?>%)</span><span>$<?= e(number_format($tax, 2)) ?></span></div>
-          <div class="summary-row"><span>Shipping</span><span><?= $shipping == 0 ? 'FREE' : '$' . e(number_format((float)$shipping, 2)) ?></span></div>
+          <div class="summary-row"><span>Shipping</span><span><?= $shipCost == 0 ? 'FREE' : '$' . e(number_format((float)$shipCost, 2)) ?></span></div>
           <div class="summary-row total"><span>Total</span><span>$<?= e(number_format(max(0, $total), 2)) ?></span></div>
 
           <form method="post" class="form" style="margin-top:16px">
@@ -827,7 +870,6 @@ function render_cart(array $items, float $subtotal, float $discount, ?string $co
     <?php
     return ob_get_clean();
 }
-
 function render_checkout(array $items, array $addresses, float $subtotal, float $discount, float $tax, array $shippingMethods, array $user): string
 {
     $total = $subtotal - $discount + $tax;
@@ -835,6 +877,7 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
     $pmt = db()->query("SELECT extra_settings FROM payment_settings WHERE provider = 'cash_app'")->fetchColumn();
     if ($pmt) { $extra = json_decode($pmt, true); $cashtag = $extra['cashtag'] ?? ''; }
     $paypalClientId = db()->query("SELECT public_key FROM payment_settings WHERE provider='paypal'")->fetchColumn();
+    $enabledPayments = db()->query("SELECT provider, label FROM payment_settings WHERE enabled=1")->fetchAll();
     ob_start(); ?>
     <div class="checkout-layout">
       <div class="checkout-form">
@@ -901,8 +944,11 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
                 <p><strong>Pay via Cash App:</strong></p>
                 <p><code>$<?= e($cashtag) ?></code></p>
                 <p class="hint">Amount: <strong>$<?= e(number_format($total, 2)) ?></strong></p>
-                <div id="cashapp-qr" style="margin-top:8px">
-                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https%3A%2F%2Fcash.app%2F%24<?= e(urlencode($cashtag)) ?>" alt="Cash App QR" style="border-radius:8px;max-width:200px">
+                <div id="cashapp-qr" style="margin-top:8px;position:relative;display:inline-block">
+                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=https%3A%2F%2Fcash.app%2F%24<?= e(urlencode($cashtag)) ?>%2F<?= e(number_format($total, 2)) ?>" alt="Cash App QR" style="border-radius:12px;max-width:220px;display:block">
+                  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.15)">
+                    <span style="font-size:22px;font-weight:900;color:#00d632;line-height:1">$</span>
+                  </div>
                   <p class="hint" style="margin-top:4px">Scan with your phone to pay</p>
                 </div>
               </div>
@@ -923,13 +969,12 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
           <div class="panel">
             <h3>Payment Method</h3>
             <div class="payment-methods-grid">
-              <label class="payment-option"><input type="radio" name="payment_method" value="stripe" checked onchange="toggleCashApp();togglePayPal()"> <span>Credit/Debit Card</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="paypal" onchange="toggleCashApp();togglePayPal()"> <span>PayPal</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="square" onchange="toggleCashApp();togglePayPal()"> <span>Square</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="cash_app" onchange="toggleCashApp();togglePayPal()"> <span>Cash App</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="apple_pay" onchange="toggleCashApp();togglePayPal()"> <span>Apple Pay</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="google_pay" onchange="toggleCashApp();togglePayPal()"> <span>Google Pay</span></label>
-              <label class="payment-option"><input type="radio" name="payment_method" value="bank_transfer" onchange="toggleCashApp();togglePayPal()"> <span>Bank Transfer</span></label>
+              <?php $firstPm = true; foreach ($enabledPayments as $pm): ?>
+                <label class="payment-option">
+                  <input type="radio" name="payment_method" value="<?= e($pm["provider"]) ?>" <?= $firstPm ? "checked" : "" ?> onchange="toggleCashApp();togglePayPal();toggleBankTransfer()">
+                  <span><?= e($pm["label"] ?: ucfirst(str_replace("_", " ", $pm["provider"]))) ?></span>
+                </label>
+              <?php $firstPm = false; endforeach; ?>
             </div>
             <div id="paypal-button-container" style="display:none;margin-top:16px"></div>
           </div>
@@ -966,6 +1011,7 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
     function toggleCashApp() {
       var sel = document.querySelector('input[name="payment_method"]:checked');
       var fields = document.getElementById('cashapp-fields');
+      if (!fields) return;
       var inputs = fields.querySelectorAll('input[name="cashapp_name"], input[name="cashapp_phone"]');
       if (sel && sel.value === 'cash_app') {
         fields.style.display = 'block';
@@ -974,6 +1020,12 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
         fields.style.display = 'none';
         inputs.forEach(function(el) { el.required = false; });
       }
+    }
+    function toggleBankTransfer() {
+      var s=document.querySelector('input[name="payment_method"]:checked');
+      var f=document.getElementById('bank-fields');
+      if(!f)return;
+      f.style.display=(s&&s.value==='bank_transfer')?'block':'none';
     }
     function togglePayPal() {
       var sel = document.querySelector('input[name="payment_method"]:checked');
@@ -985,14 +1037,14 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
         if (!container.hasChildNodes()) {
           paypal.Buttons({
             createOrder: function(data, actions) {
-              return fetch('/?action=paypal_create_order', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'csrf=' + encodeURIComponent(document.querySelector('input[name=\"csrf\"]').value) }).then(function(r) { return r.json(); }).then(function(d) { return d.id; });
+              return fetch('/?action=paypal_create_order', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: 'action=paypal_create_order&csrf=' + encodeURIComponent(document.querySelector('input[name=\"csrf\"]').value) }).then(function(r) { return r.json(); }).then(function(d) { return d.id; });
             },
             onApprove: function(data, actions) {
               var form = document.querySelector('.checkout-form form');
               var fd = new FormData(form);
-              fd.append('order_id', data.orderID);
+              fd.set('action', 'paypal_capture_order'); fd.append('paypal_order_id', data.orderID);
               fd.append('csrf', document.querySelector('input[name=\"csrf\"]').value);
-              return fetch('/?action=paypal_capture_order', { method: 'POST', body: new URLSearchParams(fd) }).then(function(r) { return r.json(); }).then(function(d) { if (d.success) window.location = d.redirect; });
+              return fetch('/', { method: 'POST', body: new URLSearchParams(fd) }).then(function(r) { return r.json(); }).then(function(d) { if (d.success) window.location = d.redirect; });
             }
           }).render('#paypal-button-container');
         }
@@ -1003,6 +1055,7 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
     }
     toggleCashApp();
     togglePayPal();
+    toggleBankTransfer();
     </script>
     <?php
     return ob_get_clean();
@@ -1032,8 +1085,11 @@ function render_order_confirmed(array $order, array $items): string
       <div class="panel" style="margin-top:24px;text-align:center;border-color:var(--green)">
         <h3>Cash App Payment</h3>
         <p class="hint">Scan this QR code with the Cash App to complete your payment.</p>
-        <div style="margin:16px 0">
-          <img src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https%3A%2F%2Fcash.app%2F%24<?= e(urlencode($cashtag)) ?>" alt="Cash App QR" style="border-radius:8px;max-width:250px">
+        <div style="margin:16px 0;position:relative;display:inline-block">
+          <img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=https%3A%2F%2Fcash.app%2F%24<?= e(urlencode($cashtag)) ?>%2F<?= e(number_format((float)$order["total"], 2)) ?>" alt="Cash App QR" style="border-radius:12px;max-width:220px;display:block">
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.15)">
+            <span style="font-size:22px;font-weight:900;color:#00d632;line-height:1">$</span>
+          </div>
         </div>
         <p><strong>Amount:</strong> $<?= e(number_format((float)$order['total'], 2)) ?></p>
         <p><strong>Pay to:</strong> <code>$<?= e($cashtag) ?></code></p>
@@ -1609,7 +1665,7 @@ function render_bug_report_form(): string
     ob_start(); ?>
     <section class="page-title">
       <div class="container">
-        <h1>Report a Bug / Debug</h1>
+        <h1 style="font-size:28px;max-width:600px;margin:0 auto 8px;line-height:1.3">Report a Bug / Debug</h1>
         <p class="hint">Found something wrong? Let us know so we can fix it.</p>
       </div>
     </section>
@@ -1635,7 +1691,7 @@ function render_membership_page(array $plans, ?array $userMembership): string
     ob_start(); ?>
     <section class="page-title">
       <div class="container">
-        <h1>🔥 Sugga Gang Membership</h1>
+        <h1 style="font-size:28px;max-width:600px;margin:0 auto 8px;line-height:1.3">🔥 Sugga Gang Membership</h1>
         <p class="hint">Join the gang. Get early access, exclusive gear, and monthly perks.</p>
       </div>
     </section>
@@ -1685,7 +1741,7 @@ function render_size_guide(?array $page, array $sizeCharts): string
     ob_start(); ?>
     <section class="page-title">
       <div class="container">
-        <h1>📏 Size Guide</h1>
+        <h1 style="font-size:28px;max-width:600px;margin:0 auto 8px;line-height:1.3">📏 Size Guide</h1>
         <p class="hint">Find your perfect fit with our size charts.</p>
       </div>
     </section>
@@ -1717,7 +1773,7 @@ function render_webmaster_page(?array $webmaster): string
     ob_start(); ?>
     <section class="page-title">
       <div class="container">
-        <h1>👤 Webmaster</h1>
+        <h1 style="font-size:28px;max-width:600px;margin:0 auto 8px;line-height:1.3">👤 Webmaster</h1>
         <p class="hint">Site administrator and developer.</p>
       </div>
     </section>
@@ -1728,6 +1784,21 @@ function render_webmaster_page(?array $webmaster): string
         <?php else: ?>
           <div class="avatar-placeholder" style="width:120px;height:120px;font-size:42px;margin:0 auto 16px;border-radius:50%">WM</div>
         <?php endif; ?>
+          <?php $bankDetails = db()->query("SELECT public_key, secret_key, extra_settings FROM payment_settings WHERE provider='bank_transfer' AND enabled=1")->fetch(); ?>
+          <?php if ($bankDetails): ?>
+          <div class="panel" id="bank-fields" style="display:none;border-color:var(--blue)">
+            <h3>&#127973; Bank Transfer Instructions</h3>
+            <div style="font-size:13px;line-height:1.8;margin-top:8px">
+              <p>Please transfer the exact amount to the following account:</p>
+              <p><strong>Bank:</strong> <?= e($bankDetails['public_key'] ?: 'SUGGAWAYZ Financial') ?></p>
+              <p><strong>Account Number:</strong> <?= e($bankDetails['secret_key'] ?: '987654321') ?></p>
+              <p><strong>Routing Number:</strong> <?= e(json_decode($bankDetails['extra_settings'] ?? '{}', true)['routing'] ?? '123456789') ?></p>
+              <p><strong>Amount:</strong> $<?= e(number_format($total, 2)) ?></p>
+              <hr style="border-color:var(--line-soft);margin:12px 0">
+              <p style="font-size:12px;color:var(--muted)">After sending the transfer, email confirmation to <strong>payments@suggawayz.com</strong> with your order number.</p>
+            </div>
+          </div>
+          <?php endif; ?>
         <h2><?= e($webmaster['full_name'] ?? 'SUGGAWAYZ Webmaster') ?></h2>
         <p class="hint" style="margin:4px 0 16px"><?= e($webmaster['username'] ?? '') ?></p>
         <p style="font-size:13px;color:var(--muted);line-height:1.6"><?= e($webmaster['bio'] ?? 'Site administrator for SUGGAWAYZ. Contact us for any inquiries.') ?></p>

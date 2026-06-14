@@ -17,7 +17,7 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
   <meta property="og:image" content="<?= e($og_image ?? '/assets/img/og-default.png') ?>">
   <?php if (isset($canonical_url)): ?><link rel="canonical" href="<?= e($canonical_url) ?>"><?php endif; ?>
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
-  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/style.css?v=<?= time() ?>">
 </head>
 <body>
   <img src="/assets/img/header2.jpg" alt="Header" style="width:100%;display:block;max-height:400px;object-fit:cover">
@@ -28,6 +28,8 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
         <a href="/">⌂ Home</a>
         <a href="/?page=shop">🛒 Shop</a>
         <a href="/?page=shop&category=sugga-gang-member">🔥 Join Sugga Gang</a>
+        <a href="/?page=membership">👥 Membership</a>
+        <a href="/?page=seasons">💎 Limited</a>
         <a href="/?page=collections">📦 Collections</a>
         <a href="/?page=new-drops">🔥 New Drops</a>
         <a href="/?page=lookbook">📸 Events</a>
@@ -107,6 +109,7 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
           <h4>Shop</h4>
           <a href="/?page=shop">🛒 All Products</a>
           <a href="/?page=shop&category=sugga-gang-member">🔥 Join Sugga Gang</a>
+          <a href="/?page=membership">👥 Membership</a>
           <a href="/?page=collections">📦 Collections</a>
           <a href="/?page=new-drops">🔥 New Drops</a>
           <a href="/?page=lookbook">📸 Events</a>
@@ -125,7 +128,7 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
           <a href="/?page=blog">📝 Blog</a>
           <a href="/?page=terms">📜 Terms</a>
           <a href="/?page=privacy">🔒 Privacy</a>
-          <a href="/?page=webmaster">👤 Webmaster</a>
+          <a href="/?role=webmaster">👤 Webmaster</a>
         </div>
         <div class="footer-col">
           <h4>Stay in the Loop</h4>

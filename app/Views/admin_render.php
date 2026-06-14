@@ -83,14 +83,37 @@ function render_admin_dashboard(
     <div class="admin-layout">
       <div class="admin-sidebar panel">
         <h3>Webmaster v2</h3>
-        <p class="hint"><?= e($user['full_name'] ?: $user['username']) ?></p>
+        <div class="admin-brand"><?= e($user['full_name'] ?: $user['username']) ?></div>
         <nav class="admin-nav">
-          <?php           $origOrder = ['dashboard','products','seasons','categories','comingsoon','orders','customers','coupons','pos','payments','shipping','inventory','reorder','sizecharts','employees','memberships','signins','audit','inbox','newsletter','contact','pages','blog','events','todos','bugreports','settings','security'];
-          $labels = ['dashboard'=>'📊 Dashboard','products'=>'📦 Products','seasons'=>'🏖️ Seasons','categories'=>'🏷️ Categories','comingsoon'=>'⏳ Coming Soon','orders'=>'📋 Orders','customers'=>'👤 Customers','coupons'=>'🎫 Coupons','pos'=>'🧾 POS Drawer','payments'=>'💳 Payments','shipping'=>'🚚 Shipping','inventory'=>'📦 Inventory','reorder'=>'🔄 Reorder','sizecharts'=>'📏 Size Charts','employees'=>'👥 Employees','memberships'=>'👥 Members','signins'=>'🔑 Sign-ins','audit'=>'📜 Audit Log','inbox'=>'📨 Inbox','newsletter'=>'📧 Newsletter','contact'=>'📧 Contact','pages'=>'📄 Pages','blog'=>'✍️ Blog','events'=>'📅 Events','todos'=>'✅ Todo Board','bugreports'=>'🐛 Bug Reports','settings'=>'⚙️ Settings','security'=>'🔒 Security'];
-          foreach ($origOrder as $tabKey): $superOnly = in_array($tabKey, ['inbox','memberships','todos','security'], true); if ($superOnly && !$isSuperAdmin) continue; ?>
-            <a href="/?page=admin&tab=<?= $tabKey ?>" class="<?= $effectiveTab === $tabKey ? 'active' : '' ?>"><?= $labels[$tabKey] ?? $tabKey ?></a>
+          <?php
+          $groups = [
+            'Admin' => ['dashboard' => 'Overview'],
+            'Product' => ['products' => 'Products', 'categories' => 'Categories', 'seasons' => 'Limited', 'comingsoon' => 'Coming Soon'],
+            'Sales' => ['orders' => 'Orders', 'customers' => 'Customers', 'coupons' => 'Coupons', 'payments' => 'Payments', 'memberships' => 'Members'],
+            'Operations' => ['shipping' => 'Shipping', 'inventory' => 'Inventory', 'sizecharts' => 'Sizes', 'employees' => 'Employees', 'reorder' => 'Reorder'],
+            'POS' => ['pos' => 'Point of Sale'],
+            'Logs' => ['audit' => 'Audit Log', 'signins' => 'Sign-Ins'],
+            'Mail' => ['inbox' => 'Inbox', 'newsletter' => 'Newsletter', 'blog' => 'Blog', 'contact' => 'Contacts'],
+            'Controls' => ['bugreports' => 'Bug Reports', 'pages' => 'Pages', 'events' => 'Events', 'todos' => 'Todos', 'settings' => 'Settings', 'security' => 'Security'],
+          ];
+          $superOnly = ['inbox','memberships','todos','security'];
+          foreach ($groups as $groupName => $items):
+            $visible = array_filter($items, fn($k) => !in_array($k, $superOnly) || $isSuperAdmin, ARRAY_FILTER_USE_KEY);
+            if (empty($visible)) continue;
+          ?>
+            <div class="nav-group">
+              <div class="nav-group-title" onclick="var n=this.parentNode.querySelector('.nav-group-items');n.style.display=n.style.display==='none'?'block':'none';this.classList.toggle('collapsed');try{var k='admin_nav';var c=JSON.parse(localStorage.getItem(k)||'[]');var a=Array.from(document.querySelectorAll('.nav-group-title')).map(function(x){return x.classList.contains('collapsed')});localStorage.setItem(k,JSON.stringify(a))}catch(e){}"><?= e($groupName) ?></div>
+              <div class="nav-group-items" style="display:block">
+              <?php foreach ($items as $tabKey => $label):
+                if (in_array($tabKey, $superOnly) && !$isSuperAdmin) continue;
+              ?>
+                <a href="/?page=admin&tab=<?= $tabKey ?>" class="nav-item <?= $effectiveTab === $tabKey ? 'active' : '' ?>"><?= e($label) ?></a>
+              <?php endforeach; ?>
+              </div>
+            </div>
           <?php endforeach; ?>
         </nav>
+
       </div>
 
 
@@ -959,7 +982,7 @@ function admin_payments(array $paymentSettings): void
       <h2>Payment Gateway Settings</h2>
       <p class="hint">Configure all payment providers. Sandbox mode for testing.</p>
       <div class="grid two" style="margin-top:20px">
-        <?php foreach ($paymentSettings as $ps): ?>
+        <?php foreach (array_filter($paymentSettings, fn($p) => $p["enabled"]) as $ps): ?>
           <div class="panel" style="margin-bottom:12px">
             <h3><?= e($ps['label'] ?: ucfirst(str_replace('_', ' ', $ps['provider']))) ?></h3>
             <form method="post" class="form">
@@ -967,8 +990,8 @@ function admin_payments(array $paymentSettings): void
               <input type="hidden" name="action" value="admin_update_payment">
               <input type="hidden" name="id" value="<?= (int)$ps['id'] ?>">
               <div class="form-row">
-                <label class="checkbox-label"><input type="checkbox" name="enabled" value="1" <?= $ps['enabled'] ? 'checked' : '' ?> onchange="this.form.submit()"> Enabled</label>
-                <label class="checkbox-label"><input type="checkbox" name="sandbox_mode" value="1" <?= $ps['sandbox_mode'] ? 'checked' : '' ?> onchange="this.form.submit()"> Sandbox</label>
+                <label class="checkbox-label"><input type="checkbox" name="enabled" value="1" <?= $ps['enabled'] ? 'checked' : '' ?>> Enabled</label>
+                <label class="checkbox-label"><input type="checkbox" name="sandbox_mode" value="1" <?= $ps['sandbox_mode'] ? 'checked' : '' ?>> Sandbox</label>
               </div>
               <label>Label<input name="label" value="<?= e($ps['label'] ?? '') ?>"></label>
               <?php if ($ps['provider'] === 'cash_app'): ?>
@@ -977,13 +1000,41 @@ function admin_payments(array $paymentSettings): void
                 <label>Public Key / Client ID<input name="public_key" value="<?= e($ps['public_key'] ?? '') ?>"></label>
                 <label>Secret Key / Token<input name="secret_key" value="<?= e($ps['secret_key'] ?? '') ?>"></label>
               <?php endif; ?>
-              <button class="button primary" type="submit" style="display:none">Save Settings</button>
+              <button class="button primary" type="submit" >Save Settings</button>
             </form>
           </div>
         <?php endforeach; ?>
       </table>
     </div>
-    <script>
+    
+</div>
+    
+<?php $retired = array_filter($paymentSettings, fn($p) => !$p["enabled"]); ?>
+<?php if (!empty($retired)): ?>
+    <details style="margin-top:24px">
+      <summary class="button" style="display:inline-block;cursor:pointer;padding:8px 16px;font-size:12px"> Retired Payment Methods</summary>
+      <div class="grid two" style="margin-top:12px">
+        <?php foreach ($retired as $ps): ?>
+          <div class="panel" style="margin-bottom:8px;padding:16px;opacity:0.6">
+            <h4 style="font-size:13px;margin-bottom:4px"><?= e($ps["label"] ?: ucfirst(str_replace("_", " ", $ps["provider"]))) ?></h4>
+            <p class="hint" style="font-size:11px">Retired</p>
+            <form method="post" style="display:inline">
+              <?= csrf_field() ?>
+              <input type="hidden" name="action" value="admin_update_payment">
+              <input type="hidden" name="id" value="<?= (int)$ps["id"] ?>">
+              <input type="hidden" name="enabled" value="1">
+              <input type="hidden" name="sandbox_mode" value="0">
+              <input type="hidden" name="label" value="<?= e($ps["label"] ?? "") ?>">
+              <input type="hidden" name="public_key" value="">
+              <input type="hidden" name="secret_key" value="">
+              <button class="button" type="submit" style="padding:4px 10px;min-height:auto;font-size:11px">Restore</button>
+            </form>
+          </div>
+        <?php endforeach; ?>
+      </div>
+    </details>
+<?php endif; ?>
+<script>
     function previewImg(src) {
       var m = document.getElementById('imgModal');
       if (!m) {
@@ -2086,7 +2137,7 @@ function admin_settings(): void
             <?= csrf_field() ?>
             <input type="hidden" name="action" value="admin_toggle_prepay">
             <label class="checkbox-label" style="font-size:14px">
-              <input type="checkbox" name="enabled" value="1" <?= $prepayEnabled ? 'checked' : '' ?> onchange="this.form.submit()">
+              <input type="checkbox" name="enabled" value="1" <?= $prepayEnabled ? 'checked' : '' ?>>
               Prepay Enabled
             </label>
           </form>
@@ -2315,7 +2366,7 @@ function admin_settings(): void
         <?= csrf_field() ?>
         <input type="hidden" name="action" value="admin_toggle_maintenance">
         <label class="checkbox-label" style="font-size:14px">
-          <input type="checkbox" name="enabled" value="1" <?= site_setting('maintenance_mode') ? 'checked' : '' ?> onchange="this.form.submit()">
+          <input type="checkbox" name="enabled" value="1" <?= site_setting('maintenance_mode') ? 'checked' : '' ?>>
           Maintenance Mode
         </label>
       </form>
@@ -2368,7 +2419,7 @@ function admin_bug_reports(): void
                 <?= csrf_field() ?>
                 <input type="hidden" name="action" value="admin_update_bug_status">
                 <input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
-                <select name="status" onchange="this.form.submit()" style="font-size:11px;padding:2px">
+                <select name="status" style="font-size:11px;padding:2px">
                   <option value="open" <?= $r['status'] === 'open' ? 'selected' : '' ?>>Open</option>
                   <option value="in_progress" <?= $r['status'] === 'in_progress' ? 'selected' : '' ?>>In Progress</option>
                   <option value="fixed" <?= $r['status'] === 'fixed' ? 'selected' : '' ?>>Fixed</option>
@@ -3029,7 +3080,7 @@ function admin_todos(array $todos): void
                   <?= csrf_field() ?>
                   <input type="hidden" name="action" value="admin_toggle_todo">
                   <input type="hidden" name="id" value="<?= (int)$t['id'] ?>">
-                  <input type="checkbox" onchange="this.form.submit()" <?= $t['is_completed'] ? 'checked' : '' ?>>
+                  <input type="checkbox" <?= $t['is_completed'] ? 'checked' : '' ?>>
                 </form>
               </td>
               <td>
