@@ -1,1 +1,4 @@
 storage/backups
+storage/sessions/
+storage/logs/
+storage/backups/

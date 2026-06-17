@@ -96,7 +96,7 @@ function render_admin_dashboard(
             'Mail' => ['inbox' => 'Inbox', 'newsletter' => 'Newsletter', 'blog' => 'Blog', 'contact' => 'Contacts'],
             'Controls' => ['bugreports' => 'Bug Reports', 'pages' => 'Pages', 'events' => 'Events', 'todos' => 'Todos', 'settings' => 'Settings', 'security' => 'Security'],
           ];
-          $superOnly = ['inbox','memberships','todos','security'];
+          $superOnly = ['inbox','memberships','todos','security','customers','orders','payments'];
           foreach ($groups as $groupName => $items):
             $visible = array_filter($items, fn($k) => !in_array($k, $superOnly) || $isSuperAdmin, ARRAY_FILTER_USE_KEY);
             if (empty($visible)) continue;
@@ -683,6 +683,8 @@ function admin_customers(array $customers): void
                 <label class="checkbox-label" style="font-size:11px;gap:4px"><input type="checkbox" name="is_deleted" value="1" <?= $c['is_deleted'] ? 'checked' : '' ?>> Banned</label>
                 <button class="button" type="submit" style="padding:4px 8px;min-height:auto">Save</button>
               </form>
+              <form method="post" style="display:inline"><?= csrf_field() ?><input type="hidden" name="action" value="admin_verify_customer"><input type="hidden" name="id" value="<?= (int)$c['id'] ?>"><button class="button" type="submit" style="padding:4px 8px;min-height:auto;font-size:10px;border-color:var(--cyan)">✓ Verify</button></form>
+              <form method="post" style="display:inline" onsubmit="return confirm('Delete this customer permanently?')"><?= csrf_field() ?><input type="hidden" name="action" value="admin_delete_customer"><input type="hidden" name="id" value="<?= (int)$c['id'] ?>"><button class="button" type="submit" style="padding:4px 8px;min-height:auto;font-size:10px;border-color:rgba(255,76,76,0.5)">🗑 Delete</button></form>
             </td>
           </tr>
         <?php endforeach; ?>
@@ -2108,6 +2110,7 @@ function admin_settings(): void
     $socialPlatforms = ['instagram','tiktok','twitter','youtube','facebook'];
     $socialLabels = ['instagram'=>'Instagram','tiktok'=>'TikTok','twitter'=>'Twitter / X','youtube'=>'YouTube','facebook'=>'Facebook'];
     $subTabs = [
+        'cronjobs' => 'Cron Jobs',
         'billing' => 'Billing',
         'branding' => 'Branding',
         'email' => 'Email',
@@ -2123,7 +2126,85 @@ function admin_settings(): void
       </div>
     </div>
 
-    <?php if ($subtab === 'billing'): ?>
+    <?php if ($subtab === 'cronjobs'): ?>
+    <div class="panel">
+      <h2>⏰ Cron Job Status</h2>
+      <p class="hint">Scheduled tasks and live countdown to next run.</p>
+    </div>
+    <div class="panel">
+      <table class="table" id="cron-table">
+        <tr><th>Task</th><th>Schedule</th><th>Last Run</th><th>Next Run</th><th>Status</th></tr>
+        <?php
+        $crons = [
+            ['Security Check (Weekly)', '0 8 * * 1', '/www/wwwroot/suggawayz/storage/logs/security_cron.log'],
+            ['Membership Check (Daily)', '0 6 * * *', '/www/wwwroot/suggawayz/storage/logs/membership_cron.log'],
+            ['Sign-In Cleanup (4hr)', '0 */4 * * *', '/www/wwwroot/suggawayz/storage/logs/signin_cron.log'],
+        ];
+        $i = 0;
+        foreach ($crons as $c):
+            $log = $c[2];
+            $lastRun = file_exists($log) ? date('M j, Y g:i A', filemtime($log)) : 'Never';
+            $nextRun = calculate_cron_next($c[1]);
+            $now = time();
+            $diff = $nextRun - $now;
+            if ($diff <= 0) {
+                $statusClass = 'overdue';
+                $statusText = '🔴 Overdue';
+            } elseif ($diff < 3600) {
+                $statusClass = 'soon';
+                $statusText = '🟡 ' . ceil($diff / 60) . ' min';
+            } else {
+                $statusClass = 'ok';
+                $statusText = '🟢 ' . floor($diff / 3600) . 'h ' . floor(($diff % 3600) / 60) . 'm';
+            }
+        ?>
+          <tr data-next-run="<?= $nextRun ?>">
+            <td><strong><?= e($c[0]) ?></strong></td>
+            <td style="font-size:11px;font-family:mono"><?= e($c[1]) ?></td>
+            <td style="font-size:12px"><?= e($lastRun) ?></td>
+            <td class="next-run-cell" style="font-size:12px"><?= e(date('M j, Y g:i A', $nextRun)) ?></td>
+            <td style="font-size:12px;white-space:nowrap"><span class="cron-status <?= $statusClass ?>"><?= $statusText ?></span></td>
+          </tr>
+        <?php $i++; endforeach; ?>
+      </table>
+    </div>
+    <script>
+    (function() {
+      var rows = document.querySelectorAll('#cron-table tr[data-next-run]');
+      if (!rows.length) return;
+      function tick() {
+        var now = Math.floor(Date.now() / 1000);
+        rows.forEach(function(row) {
+          var next = parseInt(row.getAttribute('data-next-run'), 10);
+          if (isNaN(next)) return;
+          var diff = next - now;
+          var span = row.querySelector('.cron-status');
+          if (!span) return;
+          if (diff <= 0) {
+            span.textContent = '🔴 Overdue';
+            span.className = 'cron-status overdue';
+          } else {
+            var hours = Math.floor(diff / 3600);
+            var mins = Math.floor((diff % 3600) / 60);
+            var secs = diff % 60;
+            if (hours > 0) {
+              span.textContent = '🟢 ' + hours + 'h ' + mins + 'm ' + secs + 's';
+              span.className = 'cron-status ok';
+            } else if (mins > 0) {
+              span.textContent = '🟡 ' + mins + 'm ' + secs + 's';
+              span.className = 'cron-status soon';
+            } else {
+              span.textContent = '🟡 ' + secs + 's';
+              span.className = 'cron-status soon';
+            }
+          }
+        });
+      }
+      tick();
+      setInterval(tick, 1000);
+    })();
+    </script>
+    <?php elseif ($subtab === 'billing'): ?>
     <div class="panel">
       <h3>Prepay (Testing)</h3>
       <p class="hint">Use this to test carts and billing without real payments.</p>
@@ -2741,7 +2822,32 @@ function admin_security(): void
         'ok' => true,
     ];
 
-    // 13. SSL certificate check via stream socket
+    // 13. LFI/RFI protection
+    $dangerFiles = glob($root . '/_*.php');
+    $lfiOk = empty($dangerFiles);
+    $checks[] = [
+        'icon' => $lfiOk ? '✅' : '❌',
+        'label' => 'LFI/RFI protection',
+        'detail' => $lfiOk ? 'No dangerous scripts in webroot' : 'Found: ' . implode(', ', array_map('basename', $dangerFiles)),
+        'ok' => $lfiOk,
+    ];
+
+    // 14. Exposed config files
+    $envBlocked = true;
+    $ch = @curl_init('https://suggawayz.com/.env');
+    if ($ch) { @curl_setopt($ch, CURLOPT_NOBODY, true); @curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); @curl_exec($ch); $envCode = @curl_getinfo($ch, CURLINFO_HTTP_CODE); @curl_close($ch); if ($envCode === 200) $envBlocked = false; }
+    $gitBlocked = true;
+    $ch2 = @curl_init('https://suggawayz.com/.git/HEAD');
+    if ($ch2) { @curl_setopt($ch2, CURLOPT_NOBODY, true); @curl_setopt($ch2, CURLOPT_SSL_VERIFYPEER, false); @curl_exec($ch2); $gitCode = @curl_getinfo($ch2, CURLINFO_HTTP_CODE); @curl_close($ch2); if ($gitCode === 200) $gitBlocked = false; }
+    $exposedOk = $envBlocked && $gitBlocked;
+    $checks[] = [
+        'icon' => $exposedOk ? '✅' : '❌',
+        'label' => 'Exposed config files',
+        'detail' => $exposedOk ? '.env and .git blocked from web access' : ($envBlocked ? '' : '.env accessible') . ($gitBlocked ? '' : ($envBlocked ? '' : '; ') . '.git accessible'),
+        'ok' => $exposedOk,
+    ];
+
+    // 15. SSL certificate check via stream socket
     $sslDaysLeft = 0;
     $sslValid = false;
     $ctx = stream_context_create(['ssl' => ['capture_peer_cert' => true, 'verify_peer' => false]]);
@@ -2965,7 +3071,7 @@ function admin_inbox(array $user): void
               <p style="font-size:14px;font-weight:600;margin:8px 0"><?= e($subject) ?></p>
               <p style="font-size:11px;color:var(--text2)"><?= e($date) ?></p>
             </div>
-            <div style="padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:13px;line-height:1.7;white-space:pre-wrap;max-height:60vh;overflow-y:auto"><?= e($bodyClean) ?></div>
+            <div style="padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-size:13px;line-height:1.7;white-space:pre-wrap;max-height:60vh;overflow-y:auto"><?= strip_tags($bodyClean, '<a><b><i><u><strong><em><br><p><div><span><table><tr><td><th><tbody><thead><h1><h2><h3><h4><h5><h6><ul><ol><li><img><hr><blockquote><pre><code><style>') ?></div>
           </div>
         <?php elseif ($subtab === 'accounts'): ?>
           <div style="padding:16px">

@@ -52,17 +52,13 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
     <div id="maintBanner" style="text-align:center;padding:12px;background:rgba(0,200,255,0.08);border-bottom:1px solid rgba(0,200,255,0.2);color:var(--cyan);font-size:13px;font-family:var(--mono);line-height:1.7">
       <span id="maintText"></span>
     </div>
-    <script>
-    (function(){
-      var lines = [
-        '> SYSTEM INITIALIZING...',
-        '> Some features are still under construction while we finalize the SUGGAWAYZ experience.',
-        '> If you need to place an order, feel free to contact us via Facebook.'
-      ];
-      var el = document.getElementById('maintText');
-      var lineIdx = 0, charIdx = 0;
-      function type() {
-        if (lineIdx >= lines.length) return;
+     <script>
+     (function(){
+       var lines = [];
+       var el = document.getElementById('maintText');
+       var lineIdx = 0, charIdx = 0;
+       function type() {
+         if (lineIdx >= lines.length) return;
         var line = lines[lineIdx];
         if (charIdx < line.length) {
           el.textContent += line[charIdx];
@@ -121,6 +117,7 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
           <a href="/?page=returns">↩ Returns</a>
           <a href="/?page=size-guide">📏 Size Guide</a>
           <a href="/?page=bug-report">🐛 Report a Bug</a>
+          <a href="/?page=coupons">🏷️ Coupons</a>
         </div>
         <div class="footer-col">
           <h4>Company</h4>
@@ -135,6 +132,7 @@ $socialIcons = ['instagram'=>'IG','tiktok'=>'TK','twitter'=>'X','youtube'=>'YT',
           <p><?= e(site_setting('hero_subscribe', 'Subscribe for exclusive drops and early access.')) ?></p>
           <form method="post" action="/?page=subscribe" class="footer-form">
             <?= csrf_field() ?>
+            <input type="hidden" name="action" value="subscribe">
             <input type="email" name="email" placeholder="Your email" required>
             <button type="submit" class="button primary">Subscribe</button>
           </form>

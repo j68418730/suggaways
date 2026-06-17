@@ -70,6 +70,8 @@ function verify_csrf(): void
     if (empty($token) || !is_string($token) || !hash_equals(csrf_token(), $token)) {
         session_flash('error', 'Session expired or security token invalid. Please try again.');
         $ref = $_SERVER['HTTP_REFERER'] ?? '/';
+        $refHost = parse_url($ref, PHP_URL_HOST);
+        if ($refHost && $refHost !== ($_SERVER['HTTP_HOST'] ?? '')) $ref = '/';
         header("Location: {$ref}", true, 302);
         exit;
     }
@@ -120,6 +122,8 @@ function redirect(string $url, int $status = 302): never
 function redirect_back(): never
 {
     $ref = $_SERVER['HTTP_REFERER'] ?? '/';
+    $refHost = parse_url($ref, PHP_URL_HOST);
+    if ($refHost && $refHost !== ($_SERVER['HTTP_HOST'] ?? '')) $ref = '/';
     redirect($ref);
 }
 
@@ -573,6 +577,7 @@ function validate_uploaded_image(array $file): ?string
 
 function send_email(string $to, string $subject, string $body): bool
 {
+    $subject = str_replace(["\r", "\n"], '', $subject);
     $host = site_setting('email_smtp_host', '');
     if ($host) {
         return send_email_smtp($to, $subject, $body);
@@ -612,6 +617,7 @@ function send_email_smtp(string $to, string $subject, string $body): bool
 
     if (!$host || !$user || !$pass) return false;
 
+    $subject = str_replace(["\r", "\n"], '', $subject);
     $prefix = ($enc === 'ssl') ? 'ssl://' : '';
     $errno = 0; $errstr = '';
     $fp = @fsockopen($prefix . $host, $port, $errno, $errstr, 15);
@@ -854,4 +860,23 @@ function slugify(string $text): string
 function generate_order_number(): string
 {
     return 'SW-' . strtoupper(bin2hex(random_bytes(4))) . '-' . date('Ymd');
+}
+
+function validate_password_strength(string $password): ?string
+{
+    if (strlen($password) < 8) return 'Password must be at least 8 characters.';
+    if (!preg_match('/[A-Z]/', $password)) return 'Password must contain at least one uppercase letter.';
+    if (!preg_match('/[0-9]/', $password)) return 'Password must contain at least one number.';
+    return null;
+}
+
+function generate_suggested_password(): string
+{
+    $upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $lower = 'abcdefghijklmnopqrstuvwxyz';
+    $digits = '0123456789';
+    $all = $upper . $lower . $digits;
+    $pw = $upper[random_int(0, 25)] . $lower[random_int(0, 25)] . $digits[random_int(0, 9)];
+    for ($i = 0; $i < 7; $i++) $pw .= $all[random_int(0, strlen($all) - 1)];
+    return str_shuffle($pw);
 }
