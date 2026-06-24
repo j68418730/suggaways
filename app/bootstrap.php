@@ -10,6 +10,8 @@ session_start([
     'cookie_secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
     'use_strict_mode' => true,
     'use_only_cookies' => true,
+
+
 ]);
 
 error_reporting(E_ALL);
@@ -31,8 +33,7 @@ function bootstrap_database(): void
         db()->exec(file_get_contents($schema));
     }
 
-    seed_user('spectre', 'admin', 'webmaster', 'spectre@suggawayz.local', 'SUGGAWAYZ Webmaster');
-    seed_user('seed_user', bin2hex(random_bytes(16)), 'customer', 'seed-' . time() . '@suggawayz.local', 'Seed Account');
+    // Production — no seed users created
 }
 
 function seed_user(string $username, string $password, string $role, string $email, string $fullName): void
