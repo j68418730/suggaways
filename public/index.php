@@ -84,6 +84,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             db()->prepare('INSERT INTO email_verifications (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))')
                 ->execute([$userId, $verifyToken]);
 
+            // Send verification email
+            $verifyLink = 'https://suggawayz.com/?page=verify-email&token=' . urlencode($verifyToken) . '&email=' . urlencode($email);
+            $verifyBody = '<h2>Welcome to SUGGAWAYZ!</h2><p>Click below to verify your email:</p><p><a href="' . $verifyLink . '">' . $verifyLink . '</a></p><p>This link expires in 24 hours.</p>';
+            @send_email($email, 'Verify your SUGGAWAYZ account', $verifyBody);
+
             audit('registered', 'users', (string)$userId);
             session_flash('notice', 'Account created! Please check your email to verify.');
             redirect('/?page=login');
@@ -2053,6 +2058,22 @@ case 'shipping':
         $hero_content = '<p class="eyebrow">Save Money</p><h1>🏷️ Coupons & Discounts</h1>';
         $content = render_coupons_page($coupons);
         break;
+
+    case 'verify-email':
+        $vToken = trim($_GET['token'] ?? '');
+        $vEmail = trim($_GET['email'] ?? '');
+        if ($vToken && $vEmail) {
+            $stmt = db()->prepare("SELECT id FROM email_verifications WHERE token=? AND user_id=(SELECT id FROM users WHERE email=?) AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1");
+            $stmt->execute([$vToken, $vEmail]);
+            if ($stmt->fetch()) {
+                db()->prepare("UPDATE users SET email_verified_at=NOW() WHERE email=?")->execute([$vEmail]);
+                db()->prepare("DELETE FROM email_verifications WHERE email=?")->execute([$vEmail]);
+                session_flash('notice', 'Email verified successfully! You can now log in.');
+            } else {
+                session_flash('error', 'Invalid or expired verification link.');
+            }
+        }
+        redirect('/?page=login');
 
     case 'forgot-password':
         $hero_content = '<p class="eyebrow">Recovery</p><h1>Reset Password</h1>';

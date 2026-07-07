@@ -337,10 +337,18 @@ function render_product_detail(array $product, array $images, array $sizes, arra
             <div class="option-group">
               <label>Color</label>
               <div class="option-buttons">
-                <?php foreach ($colors as $color): ?>
-                  <label class="option-btn">
-                    <input type="radio" name="color" value="<?= e($color) ?>" required>
-                    <span><?= e($color) ?></span>
+                <?php foreach ($colors as $color): $hex = match(strtolower($color)) {
+                    'black' => '#000000', 'white' => '#ffffff', 'grey' => '#808080',
+                    'pink' => '#ff69b4', 'light blue' => '#87ceeb', 'lime green' => '#32cd32',
+                    'light purple' => '#b19cd9', 'red' => '#ff0000', 'blue' => '#0000ff',
+                    'green' => '#008000', 'yellow' => '#ffff00', 'orange' => '#ffa500',
+                    'purple' => '#800080', 'navy' => '#000080', 'brown' => '#8b4513',
+                    default => '#cccccc'
+                }; ?>
+                  <label class="option-btn color-swatch" style="display:inline-block;margin:4px;cursor:pointer;border:2px solid transparent;border-radius:50%;padding:2px;<?= $hex === '#ffffff' ? 'border-color:#ccc' : '' ?>">
+                    <input type="radio" name="color" value="<?= e($color) ?>" required style="display:none" onchange="this.closest('label').querySelector('span').textContent=this.value;document.querySelectorAll('.color-swatch').forEach(function(s){s.style.borderColor='transparent'});this.closest('label').style.borderColor='var(--cyan)'">
+                    <span style="display:inline-block;width:28px;height:28px;border-radius:50%;background:<?= $hex ?>;border:1px solid rgba(0,0,0,0.1)" title="<?= e($color) ?>"></span>
+                    <span style="display:none"><?= e($color) ?></span>
                   </label>
                 <?php endforeach; ?>
               </div>
