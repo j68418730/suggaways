@@ -16,35 +16,6 @@ function render_home(array $featured, array $newDrops, array $collections, array
         }
     }
     ob_start(); ?>
-    <div id="dropCountdown" style="text-align:center;padding:16px;margin-bottom:20px;background:rgba(0,200,255,0.05);border:1px solid rgba(0,200,255,0.15);border-radius:8px;font-family:var(--mono)">
-      <p style="font-size:12px;color:var(--cyan);margin-bottom:6px">🚀 SITE GOES LIVE IN</p>
-      <div style="display:flex;justify-content:center;gap:16px;font-size:28px;font-weight:800;color:var(--text)">
-        <span><span id="cdDays">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">DAYS</span></span>
-        <span style="color:var(--cyan)">:</span>
-        <span><span id="cdHours">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">HOURS</span></span>
-        <span style="color:var(--cyan)">:</span>
-        <span><span id="cdMins">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">MINS</span></span>
-        <span style="color:var(--cyan)">:</span>
-        <span><span id="cdSecs">00</span><span style="display:block;font-size:10px;color:var(--text2);font-weight:400">SECS</span></span>
-      </div>
-    </div>
-    <script>
-    (function(){
-      var now = new Date();
-      var t = new Date(now.getFullYear(), now.getMonth(), 16, 13, 0, 0);
-      if (now.getDate() > 16 || (now.getDate() === 16 && now.getHours() >= 13)) { document.getElementById('dropCountdown').style.display = 'none'; return; }
-      function update() {
-        var diff = Math.max(0, Math.floor((t - new Date()) / 1000));
-        document.getElementById('cdDays').textContent = String(Math.floor(diff / 86400)).padStart(2,'0');
-        document.getElementById('cdHours').textContent = String(Math.floor((diff % 86400) / 3600)).padStart(2,'0');
-        document.getElementById('cdMins').textContent = String(Math.floor((diff % 3600) / 60)).padStart(2,'0');
-        document.getElementById('cdSecs').textContent = String(diff % 60).padStart(2,'0');
-        if (diff <= 0) document.getElementById('dropCountdown').style.display = 'none';
-      }
-      update();
-      setInterval(update, 1000);
-    })();
-    </script>
     <section class="section-title">
       <p class="eyebrow">Featured</p>
       <h2>Featured Collection</h2>
@@ -138,16 +109,6 @@ function render_home(array $featured, array $newDrops, array $collections, array
         <a class="button" href="/?page=shop">Shop All</a>
       </div>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -259,16 +220,6 @@ function render_shop(array $products, array $categories, ?string $currentCategor
         </div>
       <?php endif; ?>
     <?php endif; ?>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -337,18 +288,10 @@ function render_product_detail(array $product, array $images, array $sizes, arra
             <div class="option-group">
               <label>Color</label>
               <div class="option-buttons">
-                <?php foreach ($colors as $color): $hex = match(strtolower($color)) {
-                    'black' => '#000000', 'white' => '#ffffff', 'grey' => '#808080',
-                    'pink' => '#ff69b4', 'light blue' => '#87ceeb', 'lime green' => '#32cd32',
-                    'light purple' => '#b19cd9', 'red' => '#ff0000', 'blue' => '#0000ff',
-                    'green' => '#008000', 'yellow' => '#ffff00', 'orange' => '#ffa500',
-                    'purple' => '#800080', 'navy' => '#000080', 'brown' => '#8b4513',
-                    default => '#cccccc'
-                }; ?>
-                  <label class="option-btn color-swatch" style="display:inline-block;margin:4px;cursor:pointer;border:2px solid transparent;border-radius:50%;padding:2px;<?= $hex === '#ffffff' ? 'border-color:#ccc' : '' ?>">
-                    <input type="radio" name="color" value="<?= e($color) ?>" required style="display:none" onchange="this.closest('label').querySelector('span').textContent=this.value;document.querySelectorAll('.color-swatch').forEach(function(s){s.style.borderColor='transparent'});this.closest('label').style.borderColor='var(--cyan)'">
-                    <span style="display:inline-block;width:28px;height:28px;border-radius:50%;background:<?= $hex ?>;border:1px solid rgba(0,0,0,0.1)" title="<?= e($color) ?>"></span>
-                    <span style="display:none"><?= e($color) ?></span>
+                <?php foreach ($colors as $color): ?>
+                  <label class="option-btn">
+                    <input type="radio" name="color" value="<?= e($color) ?>" required>
+                    <span><?= e($color) ?></span>
                   </label>
                 <?php endforeach; ?>
               </div>
@@ -444,16 +387,6 @@ function render_product_detail(array $product, array $images, array $sizes, arra
         <?php endforeach; ?>
       </section>
     <?php endif; ?>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -471,16 +404,6 @@ function render_collections(array $collections): string
         </a>
       <?php endforeach; ?>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -549,16 +472,6 @@ function render_new_drops(array $products): string
         </article>
       <?php endforeach; ?>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -586,16 +499,6 @@ function render_events(): string
         </div>
       <?php endforeach; ?>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -626,16 +529,6 @@ function render_about(?array $page): string
         <p>Innovation, inclusivity, sustainability, and authenticity. We build for the future while respecting the planet and its people.</p>
       </div>
     </div>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -671,16 +564,6 @@ function render_contact(): string
         </form>
       </div>
     </div>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -703,16 +586,6 @@ function render_faq(array $faqs, array $categories): string
         </details>
       <?php endforeach; ?>
     </div>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -733,16 +606,6 @@ function render_blog(array $posts): string
         </a>
       <?php endforeach; ?>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -756,16 +619,6 @@ function render_blog_post(array $post): string
       <?= $post['content'] ?>
     </article>
     <a href="/?page=blog" class="button">&larr; Back to Blog</a>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -780,16 +633,6 @@ function render_static_page(?array $page): string
         <p>Page not found.</p>
       <?php endif; ?>
     </div>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -809,16 +652,6 @@ function render_login(): string
       <p class="hint" style="margin-top:16px"><a href="/?page=forgot-password">Forgot password?</a></p>
       <p class="hint">No account? <a href="/?page=register">Register here</a></p>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -846,27 +679,13 @@ function render_register(): string
           <label>ZIP Code<input name="zip" required></label>
           <label>Country<input name="country" value="United States"></label>
         </div>
-        <label>Password<input name="password" type="password" required minlength="8" autocomplete="new-password" id="reg-password"></label>
+        <label>Password<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
         <label>Confirm Password<input name="password_confirm" type="password" required></label>
-        <div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button type="button" class="button" style="padding:4px 10px;min-height:auto;font-size:10px" onclick="suggestPassword()">🔑 Suggest Password</button>
-          <span id="pw-suggestion" style="font-size:11px;color:var(--muted)"></span>
-        </div>
         <p class="hint">By registering, you agree to our <a href="/?page=terms">Terms</a> and <a href="/?page=privacy">Privacy Policy</a>.</p>
         <button class="button primary" type="submit">Create Account</button>
       </form>
       <p class="hint" style="margin-top:16px">Already have an account? <a href="/?page=login">Login</a></p>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -883,16 +702,6 @@ function render_forgot_password(): string
       </form>
       <p class="hint" style="margin-top:16px"><a href="/?page=login">Back to Login</a></p>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -986,16 +795,6 @@ function render_cart(array $items, float $subtotal, float $discount, ?string $co
         </div>
       </div>
     <?php endif; ?>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -1176,16 +975,6 @@ function render_checkout(array $items, array $addresses, float $subtotal, float 
     }
     document.addEventListener('DOMContentLoaded', function() { toggleCashApp(); togglePayPal(); });
     </script>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -1238,16 +1027,6 @@ function render_order_confirmed(array $order, array $items): string
         </div>
       <?php endforeach; ?>
     </div>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -1622,16 +1401,6 @@ function render_account_dashboard(array $user, string $tab, array $recentOrders,
         <?php endif; ?>
       </div>
     </div>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -1722,16 +1491,6 @@ function render_receipt(array $transaction, array $order, array $orderItems): st
     </div>
     <script>window.onload = function() { setTimeout(function() { window.print(); }, 500); }</script>
     </body></html>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -1813,16 +1572,6 @@ function render_pos_end_of_day(array $session, array $transactions, array $emplo
     </div>
     <script>window.onload = function() { setTimeout(function() { window.print(); }, 500); }</script>
     </body></html>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -1849,16 +1598,6 @@ function render_bug_report_form(): string
         <button class="button primary" type="submit">Submit Bug Report</button>
       </form>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -1909,16 +1648,6 @@ function render_membership_page(array $plans, ?array $userMembership): string
         <?php endforeach; ?>
       </div>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -1951,16 +1680,6 @@ function render_size_guide(?array $page, array $sizeCharts): string
         <div class="panel" style="text-align:center"><p class="hint">No size charts available yet.</p></div>
       <?php endif; ?>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -1989,16 +1708,6 @@ function render_webmaster_page(?array $webmaster): string
         <p style="font-size:12px;color:var(--muted)">📧 <a href="mailto:<?= e($webmaster['email'] ?? 'admin@suggawayz.com') ?>" style="color:var(--cyan)"><?= e($webmaster['email'] ?? 'admin@suggawayz.com') ?></a></p>
       </div>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }
@@ -2008,42 +1717,21 @@ function render_coupons_page(array $coupons): string
     ob_start(); ?>
     <section class="container" style="margin-top:24px">
       <?php if (empty($coupons)): ?>
-        <div class="panel" style="text-align:center;padding:40px">
-          <h2>No active coupons right now</h2>
-          <p class="hint">Check back later for new discounts and promotions.</p>
-          <a href="/?page=shop" class="button primary" style="margin-top:16px">Start Shopping</a>
-        </div>
+        <div class="panel" style="text-align:center;padding:40px"><h2>No active coupons right now</h2><p class="hint">Check back later.</p></div>
       <?php else: ?>
         <div class="product-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">
-        <?php foreach ($coupons as $c):
-            $val = $c['discount_type'] === 'percent' ? $c['discount_value'] . '% OFF' : '$' . number_format((float)$c['discount_value'], 2) . ' OFF';
-        ?>
+        <?php foreach ($coupons as $c): $val = $c['discount_type'] === 'percent' ? $c['discount_value'] . '% OFF' : '$' . number_format((float)$c['discount_value'], 2) . ' OFF'; ?>
           <div class="panel" style="text-align:center;padding:24px;border-color:var(--cyan);background:rgba(0,200,255,0.03)">
-            <div style="font-size:14px;color:var(--muted);margin-bottom:4px">Discount Code</div>
-            <div style="font-size:28px;font-weight:800;color:var(--cyan);letter-spacing:2px;font-family:mono;margin:8px 0;padding:12px;background:rgba(0,0,0,0.2);border-radius:6px;border:1px dashed var(--cyan)"><?= e($c['code']) ?></div>
+            <div style="font-size:28px;font-weight:800;color:var(--cyan);letter-spacing:2px;font-family:mono;padding:12px;background:rgba(0,0,0,0.2);border-radius:6px;border:1px dashed var(--cyan)"><?= e($c['code']) ?></div>
             <div style="font-size:22px;font-weight:700;color:var(--green);margin:8px 0"><?= e($val) ?></div>
-            <?php if ($c['min_order_amount']): ?>
-              <p class="hint">Min. order: $<?= e(number_format((float)$c['min_order_amount'], 2)) ?></p>
-            <?php endif; ?>
-            <?php if ($c['ends_at']): ?>
-              <p class="hint" style="margin-top:4px">Expires: <?= e(date('M j, Y', strtotime($c['ends_at']))) ?></p>
-            <?php endif; ?>
+            <?php if ($c['min_order_amount']): ?><p class="hint">Min: $<?= e(number_format((float)$c['min_order_amount'], 2)) ?></p><?php endif; ?>
+            <?php if ($c['ends_at']): ?><p class="hint">Exp: <?= e(date('M j, Y', strtotime($c['ends_at']))) ?></p><?php endif; ?>
             <button class="button primary" style="margin-top:12px;width:100%" onclick="navigator.clipboard.writeText('<?= e($c['code']) ?>');this.textContent='Copied!';">Copy Code</button>
           </div>
         <?php endforeach; ?>
         </div>
       <?php endif; ?>
     </section>
-    <script>
-    function suggestPassword() {
-      var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
-      var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
-      for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
-      p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
-      document.getElementById("reg-password").value = p;
-      document.getElementById("pw-suggestion").textContent = "✨ " + p;
-    }
-    </script>
     <?php
     return ob_get_clean();
 }

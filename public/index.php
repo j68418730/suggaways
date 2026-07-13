@@ -59,8 +59,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 session_flash('error', 'Passwords do not match.');
                 redirect('/?page=register');
             }
-            $pwErr = validate_password_strength($password);
-            if ($pwErr) { session_flash('error', $pwErr); redirect('/?page=register'); }
+            if (strlen($password) < 8) {
+                session_flash('error', 'Password must be at least 8 characters.');
+                redirect('/?page=register');
+            }
 
             $check = db()->prepare('SELECT id FROM users WHERE username = ? OR email = ?');
             $check->execute([$username, $email]);
@@ -83,11 +85,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $verifyToken = bin2hex(random_bytes(32));
             db()->prepare('INSERT INTO email_verifications (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))')
                 ->execute([$userId, $verifyToken]);
-
-            // Send verification email
-            $verifyLink = 'https://suggawayz.com/?page=verify-email&token=' . urlencode($verifyToken) . '&email=' . urlencode($email);
-            $verifyBody = '<h2>Welcome to SUGGAWAYZ!</h2><p>Click below to verify your email:</p><p><a href="' . $verifyLink . '">' . $verifyLink . '</a></p><p>This link expires in 24 hours.</p>';
-            @send_email($email, 'Verify your SUGGAWAYZ account', $verifyBody);
 
             audit('registered', 'users', (string)$userId);
             session_flash('notice', 'Account created! Please check your email to verify.');
@@ -427,8 +424,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 session_flash('error', 'Current password is incorrect.');
                 redirect('/?page=account&tab=security');
             }
-            $pwErr = validate_password_strength($newPass);
-            if ($newPass !== $confirm || $pwErr) { session_flash('error', $pwErr ?: 'Passwords must match.'); redirect('/?page=account&tab=security'); }
+            if ($newPass !== $confirm || strlen($newPass) < 8) {
+                session_flash('error', 'Passwords do not match or too short.');
+                redirect('/?page=account&tab=security');
+            }
             db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
                 ->execute([password_hash($newPass, PASSWORD_ARGON2ID), (int)$user['id']]);
             audit('password_changed', 'users', (string)$user['id']);
@@ -623,18 +622,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute(['customer', $_POST['username'], $_POST['email'], $hash, $_POST['full_name'], $_POST['phone'] ?? null]);
             $msg = $customPw ? 'Customer created with your chosen password.' : 'Customer created. Temp password: ' . $pw;
             session_flash('notice', $msg);
-            redirect('/?page=admin&tab=customers');
-
-        case 'admin_verify_customer':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare("UPDATE users SET email_verified_at=NOW() WHERE id=? AND is_employee=0")->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Customer verified.');
-            redirect('/?page=admin&tab=customers');
-
-        case 'admin_delete_customer':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare("DELETE FROM users WHERE id=? AND is_employee=0")->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Customer deleted.');
             redirect('/?page=admin&tab=customers');
 
         case 'admin_edit_customer':
@@ -1556,13 +1543,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $fixed[] = 'Fixed session directory permissions';
             }
 
-            // Fix 4: Remove dangerous scripts from webroot
-            $root = dirname(__DIR__);
-            foreach (glob("$root/_*.php") as $dangerFile) {
-                @unlink($dangerFile);
-                $fixed[] = 'Removed dangerous script: ' . basename($dangerFile);
-            }
-
             if (empty($fixed)) $fixed[] = 'No fixes needed — everything looks good.';
             session_flash('notice', implode('<br>', $fixed));
             redirect('/?page=admin&tab=security');
@@ -1765,35 +1745,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 echo json_encode(['success' => true, 'order_number' => $orderNumber]);
             } catch (\Throwable $e) { if (isset($orderId)) db()->rollBack(); echo json_encode(['error' => $e->getMessage()]); }
             exit;
-
-        case 'admin_add_api_node':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $name = trim($_POST['name'] ?? '');
-            $apiKey = trim($_POST['api_key'] ?? '');
-            $endpoint = trim($_POST['endpoint'] ?? '');
-            $notes = trim($_POST['notes'] ?? '');
-            if (!$name) { session_flash('error', 'Name is required.'); redirect('/?page=admin&tab=nodes'); }
-            if (!$apiKey) $apiKey = bin2hex(random_bytes(32));
-            db()->prepare('INSERT INTO api_nodes (name, api_key, endpoint, notes) VALUES (?, ?, ?, ?)')->execute([$name, $apiKey, $endpoint ?: null, $notes ?: null]);
-            session_flash('notice', "API key '$name' created.");
-            redirect('/?page=admin&tab=nodes');
-
-        case 'admin_toggle_api_node':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $id = (int)$_POST['id'];
-            $node = db()->prepare('SELECT is_active FROM api_nodes WHERE id=?')->execute([$id]) ? db()->query('SELECT is_active FROM api_nodes WHERE id=' . $id)->fetch() : null;
-            if ($node) {
-                $new = $node['is_active'] ? 0 : 1;
-                db()->prepare('UPDATE api_nodes SET is_active=? WHERE id=?')->execute([$new, $id]);
-                session_flash('notice', 'API key ' . ($new ? 'enabled' : 'disabled') . '.');
-            }
-            redirect('/?page=admin&tab=nodes');
-
-        case 'admin_delete_api_node':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            db()->prepare('DELETE FROM api_nodes WHERE id=?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'API key deleted.');
-            redirect('/?page=admin&tab=nodes');
         default:
             redirect_back();
     }
@@ -2054,26 +2005,10 @@ case 'shipping':
         break;
 
     case 'coupons':
-        $coupons = db()->query("SELECT code, discount_type, discount_value, min_order_amount, min_order_amount, starts_at, ends_at FROM coupons WHERE active=1 AND (starts_at IS NULL OR starts_at <= NOW()) AND (ends_at IS NULL OR ends_at >= NOW()) ORDER BY discount_value DESC")->fetchAll();
+        $coupons = db()->query("SELECT code, discount_type, discount_value, min_order_amount, starts_at, ends_at FROM coupons WHERE active=1 AND (starts_at IS NULL OR starts_at <= NOW()) AND (ends_at IS NULL OR ends_at >= NOW()) ORDER BY discount_value DESC")->fetchAll();
         $hero_content = '<p class="eyebrow">Save Money</p><h1>🏷️ Coupons & Discounts</h1>';
         $content = render_coupons_page($coupons);
         break;
-
-    case 'verify-email':
-        $vToken = trim($_GET['token'] ?? '');
-        $vEmail = trim($_GET['email'] ?? '');
-        if ($vToken && $vEmail) {
-            $stmt = db()->prepare("SELECT id FROM email_verifications WHERE token=? AND user_id=(SELECT id FROM users WHERE email=?) AND expires_at > NOW() ORDER BY created_at DESC LIMIT 1");
-            $stmt->execute([$vToken, $vEmail]);
-            if ($stmt->fetch()) {
-                db()->prepare("UPDATE users SET email_verified_at=NOW() WHERE email=?")->execute([$vEmail]);
-                db()->prepare("DELETE FROM email_verifications WHERE email=?")->execute([$vEmail]);
-                session_flash('notice', 'Email verified successfully! You can now log in.');
-            } else {
-                session_flash('error', 'Invalid or expired verification link.');
-            }
-        }
-        redirect('/?page=login');
 
     case 'forgot-password':
         $hero_content = '<p class="eyebrow">Recovery</p><h1>Reset Password</h1>';

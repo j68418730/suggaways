@@ -637,6 +637,8 @@ function admin_orders(array $orders, string $search): void
 
 function admin_customers(array $customers): void
 {
+    if (!in_array($user['role'] ?? '', ['webmaster','super_admin'], true)) { echo '<p class="hint">Access denied.</p>'; return; }
+
     ?>
     <div class="panel">
       <h2>Customer Manager</h2>
@@ -979,6 +981,8 @@ function admin_reorder(array $reorderItems, array $lowStockProducts, array $prod
 
 function admin_payments(array $paymentSettings): void
 {
+    if (!in_array($user['role'] ?? '', ['webmaster','super_admin'], true)) { echo '<p class="hint">Access denied.</p>'; return; }
+
     ?>
     <div class="panel">
       <h2>Payment Gateway Settings</h2>
