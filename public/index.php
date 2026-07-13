@@ -1,2227 +1,922 @@
 <?php
-declare(strict_types=1);
 
-require_once dirname(__DIR__) . '/app/bootstrap.php';
-
-// Security headers
-header('X-Content-Type-Options: nosniff');
-header('X-Frame-Options: SAMEORIGIN');
-header('Referrer-Policy: strict-origin-when-cross-origin');
-header("Content-Security-Policy: default-src 'self'; script-src 'self' https://www.paypal.com https://www.paypalobjects.com https://api.qrserver.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; img-src 'self' data: https://api.qrserver.com https://cash.app; font-src 'self' https://fonts.gstatic.com; frame-src 'self' https://www.paypal.com; connect-src 'self' https://api-m.paypal.com");
-header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
-
-$page = $_GET['page'] ?? (isset($_GET['role']) && $_GET['role'] === 'webmaster' ? 'webmaster' : 'home');
-$action = $_POST['action'] ?? null;
-// Allow PayPal actions via GET query string
-if (str_starts_with($_GET['action'] ?? '', 'paypal_')) {
-    $action = $_GET['action'];
+function env(string $key, mixed $default = null): mixed
+{
+    $value = getenv($key);
+    if ($value === false || $value === '') {
+        static $env = null;
+        if ($env === null) {
+            $envFile = dirname(__DIR__, 2) . '/.env';
+            $env = [];
+            if (file_exists($envFile)) {
+                foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+                    if (str_starts_with(trim($line), '#')) continue;
+                    if (strpos($line, '=') !== false) {
+                        [$k, $v] = explode('=', $line, 2);
+                        $env[trim($k)] = trim($v);
+                    }
+                }
+            }
+        }
+        if (isset($env[$key])) {
+            $value = $env[$key];
+        } else {
+            return $default;
+        }
+    }
+    $lower = strtolower($value);
+    if (in_array($lower, ['true', '(true)'])) return true;
+    if (in_array($lower, ['false', '(false)'])) return false;
+    if (in_array($lower, ['null', '(null)'])) return null;
+    return $value;
 }
-$user = current_user();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!in_array($action, ['paypal_create_order', 'paypal_capture_order'], true)) {
-        verify_csrf();
+function config(string $key, mixed $default = null): mixed
+{
+    static $loaded = [];
+    $parts = explode('.', $key, 2);
+    $file = $parts[0];
+    if (!isset($loaded[$file])) {
+        $path = dirname(__DIR__, 2) . "/config/{$file}.php";
+        $loaded[$file] = file_exists($path) ? require $path : [];
+    }
+    if (!isset($parts[1])) return $loaded[$file];
+    $keys = explode('.', $parts[1]);
+    $value = $loaded[$file];
+    foreach ($keys as $k) {
+        if (!is_array($value) || !array_key_exists($k, $value)) return $default;
+        $value = $value[$k];
+    }
+    return $value;
+}
+
+function db(): PDO
+{
+    static $pdo = null;
+    if ($pdo) return $pdo;
+
+    $cfg = config('database');
+    $pdo = new PDO(
+        "mysql:host={$cfg['host']};port={$cfg['port']};dbname={$cfg['database']};charset={$cfg['charset']}",
+        $cfg['username'],
+        $cfg['password'],
+        [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES => false,
+        ]
+    );
+    return $pdo;
+}
+
+function e(?string $value): string
+{
+    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+}
+
+function csrf_token(): string
+{
+    if (empty($_SESSION['_csrf'])) {
+        $_SESSION['_csrf'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['_csrf'];
+}
+
+function verify_csrf(): void
+{
+    $token = $_POST['csrf'] ?? '';
+    if (empty($token) || !is_string($token) || !hash_equals(csrf_token(), $token)) {
+        session_flash('error', 'Session expired or security token invalid. Please try again.');
+        $ref = $_SERVER['HTTP_REFERER'] ?? '/';
+        header("Location: {$ref}", true, 302);
+        exit;
+    }
+}
+
+function csrf_field(): string
+{
+    return '<input type="hidden" name="csrf" value="' . e(csrf_token()) . '">';
+}
+
+function old(string $key, mixed $default = ''): mixed
+{
+    return $_SESSION['_old'][$key] ?? $default;
+}
+
+function session_flash(string $key, mixed $value = null): mixed
+{
+    if ($value !== null) {
+        $_SESSION['_flash'][$key] = $value;
+        return null;
+    }
+    $val = $_SESSION['_flash'][$key] ?? null;
+    unset($_SESSION['_flash'][$key]);
+    return $val;
+}
+
+function session_get(string $key, mixed $default = null): mixed
+{
+    return $_SESSION[$key] ?? $default;
+}
+
+function session_set(string $key, mixed $value): void
+{
+    $_SESSION[$key] = $value;
+}
+
+function session_has(string $key): bool
+{
+    return isset($_SESSION[$key]);
+}
+
+function redirect(string $url, int $status = 302): never
+{
+    header("Location: {$url}", true, $status);
+    exit;
+}
+
+function redirect_back(): never
+{
+    $ref = $_SERVER['HTTP_REFERER'] ?? '/';
+    redirect($ref);
+}
+
+function abort(int $code = 404, string $message = 'Not Found'): never
+{
+    http_response_code($code);
+    view("errors.{$code}", ['message' => $message], true);
+    exit;
+}
+
+function current_user(): ?array
+{
+    if (empty($_SESSION['user_id'])) return null;
+    $stmt = db()->prepare('SELECT * FROM users WHERE id = ? LIMIT 1');
+    $stmt->execute([(int)$_SESSION['user_id']]);
+    return $stmt->fetch() ?: null;
+}
+
+function is_admin(?array $user): bool
+{
+    return $user && in_array($user['role'], ['webmaster', 'super_admin', 'support', 'inventory_manager'], true);
+}
+
+function employee_can(?array $user, string $tab, string $action = 'view'): bool
+{
+    if (is_admin($user)) return true;
+    if (!$user) return false;
+    if ($action === 'edit' || $action === 'delete') return false;
+    $viewable = ['dashboard', 'products', 'categories', 'orders', 'customers', 'inventory', 'coupons', 'pos', 'blog', 'events'];
+    return in_array($tab, $viewable, true);
+}
+
+function is_clocked_in(int $employeeId): ?array
+{
+    $stmt = db()->prepare("SELECT ce.*, ps.status as session_status FROM clock_events ce LEFT JOIN pos_sessions ps ON ps.id = ce.pos_session_id WHERE ce.employee_id = ? AND ce.clock_out_at IS NULL ORDER BY ce.clock_in_at DESC LIMIT 1");
+    $stmt->execute([$employeeId]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function clock_in(int $employeeId, float $openingBalance = 0): array
+{
+    $existing = is_clocked_in($employeeId);
+    if ($existing) return ['success' => false, 'message' => 'Already clocked in.'];
+
+    db()->beginTransaction();
+    try {
+        db()->prepare('INSERT INTO pos_sessions (employee_id, opening_balance, status, notes) VALUES (?, ?, "open", ?)')
+            ->execute([$employeeId, $openingBalance, 'Clock-in session']);
+        $sessionId = (int)db()->lastInsertId();
+
+        db()->prepare('INSERT INTO clock_events (employee_id, pos_session_id, clock_in_at, notes) VALUES (?, ?, NOW(), ?)')
+            ->execute([$employeeId, $sessionId, 'Clocked in']);
+        db()->commit();
+        return ['success' => true, 'session_id' => $sessionId];
+    } catch (Exception $e) {
+        db()->rollBack();
+        return ['success' => false, 'message' => $e->getMessage()];
+    }
+}
+
+function clock_out(int $employeeId): array
+{
+    $clockEvent = is_clocked_in($employeeId);
+    if (!$clockEvent) return ['success' => false, 'message' => 'Not clocked in.'];
+
+    db()->beginTransaction();
+    try {
+        $sessionId = (int)$clockEvent['pos_session_id'];
+        $opening = (float)db()->query('SELECT opening_balance FROM pos_sessions WHERE id = ' . $sessionId)->fetchColumn();
+        $total = db()->query("SELECT COALESCE(SUM(CASE WHEN type='cash_in' OR type='sale' THEN amount WHEN type='cash_out' OR type='refund' OR type='payout' THEN -amount ELSE 0 END), 0) as balance FROM pos_transactions WHERE pos_session_id = " . $sessionId)->fetch();
+        $summary = db()->query("SELECT type, COUNT(*) as count, COALESCE(SUM(amount), 0) as total FROM pos_transactions WHERE pos_session_id = " . $sessionId . " GROUP BY type")->fetchAll();
+        $closing = $opening + (float)$total['balance'];
+
+        db()->prepare('UPDATE pos_sessions SET status="closed", closed_at=NOW(), closing_balance=? WHERE id=?')
+            ->execute([$closing, $sessionId]);
+        db()->prepare('UPDATE clock_events SET clock_out_at=NOW() WHERE id=?')
+            ->execute([(int)$clockEvent['id']]);
+        db()->commit();
+        return [
+            'success' => true,
+            'closing_balance' => $closing,
+            'opening_balance' => $opening,
+            'session_id' => $sessionId,
+            'summary' => $summary,
+        ];
+    } catch (Exception $e) {
+        db()->rollBack();
+        return ['success' => false, 'message' => $e->getMessage()];
+    }
+}
+
+function site_setting(string $key, string $default = ''): string
+{
+    $stmt = db()->prepare('SELECT setting_value FROM site_settings WHERE setting_key = ?');
+    $stmt->execute([$key]);
+    $val = $stmt->fetchColumn();
+    return $val !== false && $val !== null ? (string)$val : $default;
+}
+
+function encrypt_value(string $value): string
+{
+    $key = defined('ENCRYPTION_KEY') ? ENCRYPTION_KEY : site_setting('_encryption_key', '');
+    if (!$key) {
+        $key = bin2hex(random_bytes(32));
+        set_site_setting('_encryption_key', $key);
+    }
+    $iv = random_bytes(16);
+    $encrypted = openssl_encrypt($value, 'aes-256-cbc', hex2bin($key), OPENSSL_RAW_DATA, $iv);
+    return base64_encode($iv . $encrypted);
+}
+
+function decrypt_value(string $encoded): string
+{
+    $key = defined('ENCRYPTION_KEY') ? ENCRYPTION_KEY : site_setting('_encryption_key', '');
+    if (!$key) return '';
+    $data = base64_decode($encoded);
+    $iv = substr($data, 0, 16);
+    $encrypted = substr($data, 16);
+    return openssl_decrypt($encrypted, 'aes-256-cbc', hex2bin($key), OPENSSL_RAW_DATA, $iv) ?: '';
+}
+
+function get_member_discount(int $userId, float $subtotal): float
+{
+    if ($subtotal < 75) return 0;
+    $mem = db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active' LIMIT 1");
+    $mem->execute([$userId]);
+    if (!$mem->fetch()) return 0;
+    return round($subtotal * 0.15, 2);
+}
+
+function set_site_setting(string $key, string $value): void
+{
+    db()->prepare('INSERT INTO site_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?')
+        ->execute([$key, $value, $value]);
+}
+
+function login_user(string $username, string $password): bool
+{
+    // Rate limiting: max 5 failed attempts in 15 minutes
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $attempts = db()->prepare("SELECT COUNT(*) FROM sign_in_log WHERE ip_address = ? AND status = 'failed' AND created_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
+    $attempts->execute([$ip]);
+    if ((int)$attempts->fetchColumn() >= 5) {
+        return false;
     }
 
-    switch ($action) {
-        case 'login':
-            $username = trim((string)$_POST['username']);
-            $password = (string)$_POST['password'];
-            $remember = !empty($_POST['remember']);
-            if (login_user($username, $password)) {
-                if ($remember) {
-                    $token = bin2hex(random_bytes(32));
-                    $stmt = db()->prepare('UPDATE users SET remember_token = ? WHERE id = ?');
-                    $stmt->execute([password_hash($token, PASSWORD_ARGON2ID), (int)$_SESSION['user_id']]);
-                    setcookie('remember', $token, time() + 86400 * 30, '/', '', false, true);
-                }
-                session_flash('notice', 'Welcome back to SUGGAWAYZ.');
-                redirect('/?page=' . (is_admin(current_user()) ? 'admin' : 'account'));
-            }
-            session_flash('error', 'Login failed. Check your credentials.');
-            redirect('/?page=login');
+    $stmt = db()->prepare('SELECT * FROM users WHERE username = ? OR email = ? LIMIT 1');
+    $stmt->execute([$username, $username]);
+    $user = $stmt->fetch();
 
-        case 'register':
-            $username = trim((string)$_POST['username']);
-            $email = trim((string)$_POST['email']);
-            $password = (string)$_POST['password'];
-            $confirm = (string)$_POST['password_confirm'];
-            $fullName = trim((string)$_POST['full_name']);
-            $phone = trim((string)$_POST['phone'] ?? '');
-            $street = trim((string)$_POST['street'] ?? '');
-            $street2 = trim((string)$_POST['street2'] ?? '');
-            $city = trim((string)$_POST['city'] ?? '');
-            $state = trim((string)$_POST['state'] ?? '');
-            $zip = trim((string)$_POST['zip'] ?? '');
-            $country = trim((string)$_POST['country'] ?? 'United States');
+    if (!$user || !password_verify($password, $user['password_hash'])) {
+        record_signin(null, $username, 'failed');
+        return false;
+    }
 
-            if ($password !== $confirm) {
-                session_flash('error', 'Passwords do not match.');
-                redirect('/?page=register');
-            }
-            if (strlen($password) < 8) {
-                session_flash('error', 'Password must be at least 8 characters.');
-                redirect('/?page=register');
-            }
+    if (!empty($user['is_deleted'])) {
+        record_signin(null, $username, 'failed');
+        return false;
+    }
 
-            $check = db()->prepare('SELECT id FROM users WHERE username = ? OR email = ?');
-            $check->execute([$username, $email]);
-            if ($check->fetch()) {
-                session_flash('error', 'Username or email already taken.');
-                redirect('/?page=register');
-            }
+    if ($user['two_factor_enabled'] && !session_has('2fa_passed')) {
+        $_SESSION['2fa_user_id'] = (int)$user['id'];
+        return false;
+    }
 
-            $hash = password_hash($password, PASSWORD_ARGON2ID);
-            $stmt = db()->prepare('INSERT INTO users (role, username, email, password_hash, full_name, phone) VALUES (?, ?, ?, ?, ?, ?)');
-            $stmt->execute(['customer', $username, $email, $hash, $fullName, $phone ?: null]);
-            $userId = (int)db()->lastInsertId();
+    session_regenerate_id(true);
+    $_SESSION['user_id'] = (int)$user['id'];
+    db()->prepare('UPDATE users SET last_login_at = NOW() WHERE id = ?')->execute([(int)$user['id']]);
+    record_device((int)$user['id']);
+    record_signin((int)$user['id'], $username, 'success');
+    audit('login', 'users', (string)$user['id']);
+    return true;
+}
 
-            // Create default shipping address
-            if ($street) {
-                db()->prepare('INSERT INTO addresses (user_id, label, full_name, street_line1, street_line2, city, state, postal_code, country, is_default_shipping) VALUES (?,?,?,?,?,?,?,?,?,1)')
-                    ->execute([$userId, 'Home', $fullName, $street, $street2 ?: null, $city, $state, $zip, $country]);
-            }
+function logout_user(): void
+{
+    if (!empty($_SESSION['user_id'])) {
+        audit('logout', 'users', (string)$_SESSION['user_id']);
+    }
+    $_SESSION = [];
+    session_destroy();
+}
 
-            $verifyToken = bin2hex(random_bytes(32));
-            db()->prepare('INSERT INTO email_verifications (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))')
-                ->execute([$userId, $verifyToken]);
+function record_device(int $userId): void
+{
+    $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? 'Unknown', 0, 500);
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $stmt = db()->prepare(
+        'INSERT INTO device_tracking (user_id, device_name, ip_address, user_agent, last_seen_at) VALUES (?, ?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE last_seen_at = NOW(), ip_address = VALUES(ip_address)'
+    );
+    $stmt->execute([$userId, $ua, $ip, $ua]);
+}
 
-            audit('registered', 'users', (string)$userId);
-            session_flash('notice', 'Account created! Please check your email to verify.');
-            redirect('/?page=login');
+function audit(string $action, ?string $entityType = null, ?string $entityId = null, array $metadata = []): void
+{
+    $userId = $_SESSION['user_id'] ?? null;
+    $stmt = db()->prepare(
+        'INSERT INTO audit_logs (user_id, action, entity_type, entity_id, ip_address, user_agent, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    );
+    $stmt->execute([
+        $userId,
+        $action,
+        $entityType,
+        $entityId,
+        $_SERVER['REMOTE_ADDR'] ?? null,
+        substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255),
+        json_encode($metadata),
+    ]);
+}
 
-        case 'logout':
-            logout_user();
-            session_flash('notice', 'You have been logged out.');
-            redirect('/');
+function money(float $amount, string $currency = 'USD'): string
+{
+    $symbols = ['USD' => '$', 'EUR' => '€', 'GBP' => '£', 'JPY' => '¥', 'CAD' => 'C$', 'AUD' => 'A$'];
+    $symbol = $symbols[$currency] ?? '$';
+    return $symbol . number_format($amount, 2);
+}
 
-        case 'add_to_cart':
-            $productId = (int)$_POST['product_id'];
-            $quantity = max(1, (int)($_POST['quantity'] ?? 1));
+function cart_count(): int
+{
+    if (!empty($_SESSION['cart'])) {
+        return array_sum(array_column($_SESSION['cart'], 'quantity'));
+    }
+    if (!empty($_SESSION['user_id'])) {
+        $stmt = db()->prepare('SELECT SUM(quantity) FROM cart WHERE user_id = ?');
+        $stmt->execute([(int)$_SESSION['user_id']]);
+        return (int)$stmt->fetchColumn();
+    }
+    return 0;
+}
+
+function cart_total(): float
+{
+    $total = 0.0;
+    $items = cart_items();
+    foreach ($items as $item) {
+        $total += $item['price'] * $item['quantity'];
+    }
+    return $total;
+}
+
+function cart_items(): array
+{
+    if (!empty($_SESSION['user_id'])) {
+        $items = [];
+        unset($_SESSION['cart']);
+        $stmt = db()->query('SELECT c.*, p.name, p.price, p.sale_price, p.slug, p.images, p.sizes, p.colors FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ' . (int)$_SESSION['user_id']);
+        $dbItems = $stmt->fetchAll();
+        foreach ($dbItems as $dbItem) {
+            $items[(int)$dbItem['id']] = [
+                'product_id' => $dbItem['product_id'],
+                'name' => $dbItem['name'],
+                'price' => $dbItem['sale_price'] ?: $dbItem['price'],
+                'slug' => $dbItem['slug'],
+                'quantity' => (int)$dbItem['quantity'],
+                'size' => $dbItem['size'],
+                'color' => $dbItem['color'],
+                'image' => json_decode($dbItem['images'], true)[0] ?? '/assets/img/background.png',
+            ];
+        }
+    } else {
+        $items = $_SESSION['cart'] ?? [];
+    }
+    // Merge preorder items from session
+    if (!empty($_SESSION['preorder_cart'])) {
+        foreach ($_SESSION['preorder_cart'] as $key => $po) {
+            $items[$key] = $po;
+        }
+    }
+    return $items;
+}
+
+function add_membership_to_cart(int $planId, int $quantity = 1): void
+{
+    $stmt = db()->prepare('SELECT * FROM membership_plans WHERE id = ? AND is_active = 1');
+    $stmt->execute([$planId]);
+    $plan = $stmt->fetch();
+    if (!$plan) return;
+    $idx = "membership-{$planId}";
+    if (isset($_SESSION['cart'][$idx])) {
+        $_SESSION['cart'][$idx]['quantity'] += $quantity;
+    } else {
+        $_SESSION['cart'][$idx] = [
+            'membership_id' => $planId,
+            'name' => $plan['name'] . ' Membership',
+            'price' => (float)$plan['price'],
+            'quantity' => $quantity,
+            'image' => '/assets/img/background.png',
+            'is_membership' => true,
+        ];
+    }
+}
+
+function add_preorder_to_cart(int $comingSoonId, int $quantity = 1): void
+{
+    $idx = "preorder-{$comingSoonId}";
+    if (isset($_SESSION['preorder_cart'][$idx])) {
+        $_SESSION['preorder_cart'][$idx]['quantity'] += $quantity;
+        return;
+    }
+    $stmt = db()->prepare('SELECT * FROM coming_soon WHERE id = ?');
+    $stmt->execute([$comingSoonId]);
+    $cs = $stmt->fetch();
+    if (!$cs) return;
+    $_SESSION['preorder_cart'][$idx] = [
+        'coming_soon_id' => $comingSoonId,
+        'name' => $cs['name'],
+        'price' => (float)$cs['price'],
+        'quantity' => $quantity,
+        'image' => $cs['image'] ?: '/assets/img/products/swag.jpg',
+        'is_preorder' => true,
+    ];
+}
+
+function remove_preorder_from_cart(string $key): void
+{
+    unset($_SESSION['preorder_cart'][$key]);
+}
+
+function cart_has_preorders(): bool
+{
+    return !empty($_SESSION['preorder_cart']);
+}
+
+function cart_clear_preorders(): void
+{
+    $_SESSION['preorder_cart'] = [];
+}
+
+function add_to_cart(int $productId, int $quantity = 1, ?string $size = null, ?string $color = null): void
+{
+    $item = [
+        'product_id' => $productId,
+        'quantity' => $quantity,
+        'size' => $size,
+        'color' => $color,
+    ];
+
+    if (!empty($_SESSION['user_id'])) {
+        $existing = db()->prepare('SELECT id, quantity FROM cart WHERE user_id = ? AND product_id = ? AND (size = ? OR (size IS NULL AND ? IS NULL)) AND (color = ? OR (color IS NULL AND ? IS NULL))');
+        $uid = (int)$_SESSION['user_id'];
+        $existing->execute([$uid, $productId, $size, $size, $color, $color]);
+        $row = $existing->fetch();
+        if ($row) {
+            db()->prepare('UPDATE cart SET quantity = quantity + ? WHERE id = ?')->execute([$quantity, $row['id']]);
+        } else {
+            db()->prepare('INSERT INTO cart (user_id, product_id, quantity, size, color) VALUES (?, ?, ?, ?, ?)')->execute([$uid, $productId, $quantity, $size, $color]);
+        }
+        return;
+    }
+
+    $idx = "{$productId}-{$size}-{$color}";
+    if (isset($_SESSION['cart'][$idx])) {
+        $_SESSION['cart'][$idx]['quantity'] += $quantity;
+    } else {
+        $stmt = db()->prepare('SELECT name, price, sale_price, slug, images FROM products WHERE id = ?');
+        $stmt->execute([$productId]);
+        $p = $stmt->fetch();
+        if (!$p) return;
+        $_SESSION['cart'][$idx] = [
+            'product_id' => $productId,
+            'name' => $p['name'],
+            'price' => $p['sale_price'] ?: $p['price'],
+            'slug' => $p['slug'],
+            'quantity' => $quantity,
+            'size' => $size,
+            'color' => $color,
+            'image' => json_decode($p['images'], true)[0] ?? '/assets/img/background.png',
+        ];
+    }
+}
+
+function remove_from_cart(string $key): void
+{
+    if (str_starts_with($key, 'preorder-')) {
+        remove_preorder_from_cart($key);
+        return;
+    }
+    if (!empty($_SESSION['user_id'])) {
+        db()->prepare('DELETE FROM cart WHERE id = ? AND user_id = ?')->execute([(int)$key, (int)$_SESSION['user_id']]);
+        return;
+    }
+    unset($_SESSION['cart'][$key]);
+}
+
+function update_cart(string $key, int $quantity): void
+{
+    if (!empty($_SESSION['user_id'])) {
+        if ($quantity <= 0) {
+            db()->prepare('DELETE FROM cart WHERE id = ? AND user_id = ?')->execute([(int)$key, (int)$_SESSION['user_id']]);
+        } else {
             $size = $_POST['size'] ?? null;
             $color = $_POST['color'] ?? null;
-            add_to_cart($productId, $quantity, $size, $color);
-            session_flash('notice', 'Added to cart.');
-            redirect('/?page=cart');
-
-        case 'add_preorder_to_cart':
-            $csId = (int)$_POST['coming_soon_id'];
-            $quantity = max(1, (int)($_POST['quantity'] ?? 1));
-            add_preorder_to_cart($csId, $quantity);
-            session_flash('notice', 'Preorder added to cart.');
-            redirect('/?page=cart');
-
-        case 'update_cart':
-            foreach (($_POST['quantity'] ?? []) as $key => $qty) {
-                update_cart($key, (int)$qty);
-            }
-            redirect('/?page=cart');
-
-        case 'remove_from_cart':
-            remove_from_cart((string)$_POST['key']);
-            redirect('/?page=cart');
-
-        case 'apply_coupon':
-            $code = trim((string)$_POST['coupon']);
-            $_SESSION['coupon'] = $code;
-            session_flash('notice', 'Coupon applied.');
-            redirect('/?page=cart');
-
-        case 'remove_coupon':
-            unset($_SESSION['coupon']);
-            redirect('/?page=cart');
-
-        case 'checkout':
-            $addressId = (int)($_POST['address_id'] ?? 0);
-            $shippingMethod = (string)$_POST['shipping_method'];
-            $paymentMethod = (string)$_POST['payment_method'];
-            $notes = trim((string)$_POST['notes']);
-
-            // Guest checkout — create user if not logged in
-            if (!$user) {
-                $guestName = trim((string)($_POST['guest_name'] ?? ''));
-                $guestEmail = trim((string)($_POST['guest_email'] ?? ''));
-                if (!$guestName || !$guestEmail) {
-                    session_flash('error', 'Please provide your name and email.');
-                    redirect('/?page=checkout');
-                }
-                $guestUsername = 'guest_' . bin2hex(random_bytes(6));
-                $stmt = db()->prepare('SELECT id FROM users WHERE email = ?');
-                $stmt->execute([$guestEmail]);
-                $existing = $stmt->fetch();
-                if ($existing) {
-                    $userId = (int)$existing['id'];
-                } else {
-                    $hash = password_hash(bin2hex(random_bytes(16)), PASSWORD_ARGON2ID);
-                    $stmt = db()->prepare('INSERT INTO users (role, username, email, password_hash, full_name) VALUES (?, ?, ?, ?, ?)');
-                    $stmt->execute(['customer', $guestUsername, $guestEmail, $hash, $guestName]);
-                    $userId = (int)db()->lastInsertId();
-                }
-                // Auto-login guest
-                $_SESSION['user_id'] = $userId;
-                $user = current_user();
-            }
-
-            // Create address from inline fields if provided
-            if (!$addressId && !empty($_POST['addr_street'])) {
-                $stmt = db()->prepare('INSERT INTO addresses (user_id, label, full_name, street_line1, city, state, postal_code, country, is_default_shipping) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)');
-                $stmt->execute([
-                    (int)$user['id'],
-                    $_POST['addr_name'] ?? $user['full_name'],
-                    $_POST['addr_name'] ?? $user['full_name'],
-                    $_POST['addr_street'],
-                    $_POST['addr_city'],
-                    $_POST['addr_state'],
-                    $_POST['addr_zip'],
-                    $_POST['addr_country'] ?? 'United States',
-                ]);
-                $addressId = (int)db()->lastInsertId();
-            }
-
-            $items = cart_items();
-            if (empty($items)) {
-                session_flash('error', 'Your cart is empty.');
-                redirect('/?page=cart');
-            }
-
-            $hasPreorders = cart_has_preorders();
-            $subtotal = cart_total();
-            $couponCode = $_SESSION['coupon'] ?? null;
-            $discount = 0.0;
-            if ($couponCode) {
-                $result = apply_coupon($couponCode, $subtotal);
-                if ($result['success']) {
-                    $discount = (float)$result['discount'];
-                    $freeShipping = !empty($result['free_shipping']);
-                    db()->prepare('UPDATE coupons SET used_count = used_count + 1 WHERE code = ?')->execute([$couponCode]);
-                }
-            }
-
-            // Member 15% discount
-            $memberDiscount = $user ? get_member_discount((int)$user['id'], $subtotal) : 0;
-            $discount = max($discount, $memberDiscount);
-
-            $taxRate = config('app.tax_rate', 8.25);
-            $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
-
-            $shippingStmt = db()->prepare('SELECT * FROM shipping WHERE id = ? AND active = 1');
-            $shippingStmt->execute([(int)$shippingMethod]);
-            $shippingRow = $shippingStmt->fetch();
-            $itemCount = array_sum(array_column($items, 'quantity'));
-            $shippingCost = $freeShipping ? 0 : ($shippingRow ? (float)$shippingRow['base_rate'] + ((float)($shippingRow['per_item_rate'] ?? 0) * $itemCount) : 0.0);
-
-            $total = $subtotal - $discount + $tax + $shippingCost;
-            $orderNumber = generate_order_number();
-
-            db()->beginTransaction();
-            try {
-                $stmt = db()->prepare('INSERT INTO orders (user_id, order_number, order_type, status, subtotal, discount, coupon_code, tax, shipping, total, shipping_address_id, shipping_method, notes' . ($hasPreorders ? ', preorder_data, paid_at' : '') . ') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?' . ($hasPreorders ? ', ?, NOW()' : '') . ')');
-                $params = [
-                    (int)$user['id'], $orderNumber,
-                    $hasPreorders ? 'preorder' : 'standard',
-                    $hasPreorders ? 'paid' : 'pending',
-                    $subtotal, $discount, $couponCode, $tax, $shippingCost, $total,
-                    $addressId ?: null, $shippingRow['service_name'] ?? null, $notes
-                ];
-                if ($hasPreorders) {
-                    $preorderData = [];
-                    foreach ($items as $item) {
-                        if (!empty($item['is_preorder'])) {
-                            $preorderData[] = [
-                                'coming_soon_id' => $item['coming_soon_id'] ?? 0,
-                                'name' => $item['name'],
-                                'price' => $item['price'],
-                                'quantity' => $item['quantity'],
-                            ];
-                        }
-                    }
-                    $params[] = json_encode($preorderData);
-                }
-                $stmt->execute($params);
-                $orderId = (int)db()->lastInsertId();
-
-                foreach ($items as $key => $item) {
-                    if (!empty($item['is_preorder'])) continue;
-                    if (!empty($item['is_membership'])) {
-                        // Create membership record
-                        $existingMem = db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active'");
-                        $existingMem->execute([(int)$user['id']]);
-                        if (!$existingMem->fetch()) {
-                            db()->prepare("INSERT INTO user_memberships (user_id, plan_id, status, auto_pay, start_date, end_date) VALUES (?,?,'active',0,NOW(),DATE_ADD(NOW(), INTERVAL 1 MONTH))")
-                                ->execute([(int)$user['id'], $item['membership_id']]);
-                            $invNum = 'INV-MEM-' . time() . '-' . $user['id'];
-                            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'paid',DATE_ADD(NOW(), INTERVAL 1 MONTH))")
-                                ->execute([(int)$user['id'], $invNum, $item['price']]);
-                        }
-                        continue;
-                    }
-                    db()->prepare('INSERT INTO order_items (order_id, product_id, product_name, sku, size, color, quantity, unit_price, line_total, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-                        ->execute([
-                            $orderId, $item['product_id'] ?? 0, $item['name'],
-                            '', $item['size'] ?? null, $item['color'] ?? null,
-                            $item['quantity'], $item['price'], $item['price'] * $item['quantity'],
-                            $item['image'] ?? null
-                        ]);
-                }
-
-                db()->prepare('INSERT INTO payments (order_id, provider, status, amount, currency) VALUES (?, ?, ?, ?, ?)')
-                    ->execute([$orderId, $paymentMethod, $hasPreorders ? 'paid' : 'pending', $total, 'USD']);
-
-                if (!empty($_SESSION['user_id'])) {
-                    db()->prepare('DELETE FROM cart WHERE user_id = ?')->execute([(int)$_SESSION['user_id']]);
-                }
-                $_SESSION['cart'] = [];
-                cart_clear_preorders();
-                unset($_SESSION['coupon']);
-
-                db()->commit();
-                audit('order_placed', 'orders', (string)$orderId, ['order_number' => $orderNumber, 'order_type' => $hasPreorders ? 'preorder' : 'standard']);
-                $msg = $hasPreorders ? "Preorder {$orderNumber} placed and paid!" : "Order {$orderNumber} placed successfully!";
-                session_flash('notice', $msg);
-                redirect("/?page=order-confirmed&order={$orderNumber}");
-
-            } catch (Exception $e) {
-                db()->rollBack();
-                session_flash('error', 'Checkout failed. Please try again.');
-                redirect('/?page=checkout');
-            }
-
-         case 'contact':
-            $email = trim($_POST['email'] ?? '');
-            $name = trim($_POST['name'] ?? '');
-            $subject = trim($_POST['subject'] ?? '');
-            $message = trim($_POST['message'] ?? '');
-            $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
-
-            // Check if blocked
-            $blocked = db()->prepare("SELECT id FROM blocked_contacts WHERE email=? OR ip_address=?");
-            $blocked->execute([$email, $ip]);
-            if ($blocked->fetch()) {
-                session_flash('error', 'Your contact has been blocked due to previous spam.');
-                redirect('/?page=contact');
-            }
-
-            // Spam detection
-            $spamScore = 0;
-            $spamPatterns = ['<a href', 'http://', 'https://', 'www.', '.com', '.xyz', 'buy now', 'click here', 'free', 'winner', 'congratulations', 'cash', 'bitcoin', 'crypt', 'seo', 'ranking', 'traffic', 'viagra', 'cialis', 'casino', 'lottery', '[url=', '[/url]', '[link=', 'rich', 'earn money'];
-            $lowerMsg = strtolower($message);
-            foreach ($spamPatterns as $pattern) {
-                if (strpos($lowerMsg, $pattern) !== false) $spamScore++;
-            }
-            if (strlen($message) > 2000) $spamScore++;
-            if (preg_match('/[^\x20-\x7E\x0A\x0D]/', $message)) $spamScore++;
-            // Check frequency from same email/IP
-            $freq = db()->prepare("SELECT COUNT(*) FROM contact_submissions WHERE (email=? OR ip_address=?) AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)");
-            $freq->execute([$email, $ip]);
-            if ((int)$freq->fetchColumn() > 3) $spamScore += 3;
-
-            $isSpam = $spamScore >= 3 ? 1 : 0;
-
-            db()->prepare("INSERT INTO contact_submissions (name, email, subject, message, ip_address, is_spam) VALUES (?, ?, ?, ?, ?, ?)")
-                ->execute([$name, $email, $subject, $message, $ip, $isSpam]);
-
-            if ($isSpam) {
-                session_flash('error', 'Message flagged as spam and quarantined.');
-            } else {
-                session_flash('notice', 'Message sent! We will get back to you soon.');
-            }
-            redirect('/?page=contact');
-
-        case 'subscribe':
-            $email = trim((string)$_POST['email']);
-            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                db()->prepare('INSERT IGNORE INTO subscribers (email) VALUES (?)')->execute([$email]);
-                session_flash('notice', 'Thanks for subscribing!');
-            }
-            redirect_back();
-
-        case 'add_review':
-            if (!$user) {
-                session_flash('error', 'Please log in to leave a review.');
-                redirect('/?page=login');
-            }
-            $productId = (int)$_POST['product_id'];
-            $rating = (int)$_POST['rating'];
-            $title = trim((string)$_POST['review_title']);
-            $body = trim((string)$_POST['review_body']);
-            if ($rating >= 1 && $rating <= 5) {
-                db()->prepare('INSERT INTO reviews (product_id, user_id, rating, title, body) VALUES (?, ?, ?, ?, ?)')
-                    ->execute([$productId, (int)$user['id'], $rating, $title, $body]);
-                session_flash('notice', 'Review submitted!');
-            }
-            redirect_back();
-
-        case 'add_to_wishlist':
-            if (!$user) { session_flash('error', 'Please log in.'); redirect('/?page=login'); }
-            $pid = (int)$_POST['product_id'];
-            db()->prepare('INSERT IGNORE INTO wishlist_items (user_id, product_id) VALUES (?, ?)')
-                ->execute([(int)$user['id'], $pid]);
-            redirect_back();
-
-        case 'remove_wishlist':
-            if (!$user) { redirect('/?page=login'); }
-            db()->prepare('DELETE FROM wishlist_items WHERE user_id = ? AND product_id = ?')
-                ->execute([(int)$user['id'], (int)$_POST['product_id']]);
-            redirect_back();
-
-        case 'add_address':
-            if (!$user) { redirect('/?page=login'); }
-            db()->prepare('INSERT INTO addresses (user_id, label, full_name, phone, street_line1, street_line2, city, state, postal_code, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-                ->execute([
-                    (int)$user['id'],
-                    $_POST['label'] ?? 'Home',
-                    $_POST['full_name'], $_POST['phone'],
-                    $_POST['street_line1'], $_POST['street_line2'] ?? null,
-                    $_POST['city'], $_POST['state'], $_POST['postal_code'],
-                    $_POST['country'] ?? 'United States'
-                ]);
-            session_flash('notice', 'Address added.');
-            redirect('/?page=account&tab=addresses');
-
-        case 'update_profile':
-            if (!$user) { redirect('/?page=login'); }
-            $avatarUrl = $user['avatar'];
-            if (!empty($_FILES['avatar']['tmp_name'])) {
-                $ext = validate_uploaded_image($_FILES['avatar']);
-                if ($ext) {
-                    $filename = 'avatar-' . $user['id'] . '-' . time() . '.' . $ext;
-                    $dest = dirname(__DIR__) . '/public/assets/img/avatars/' . $filename;
-                    if (!is_dir(dirname($dest))) mkdir(dirname($dest), 0755, true);
-                    if (move_uploaded_file($_FILES['avatar']['tmp_name'], $dest)) {
-                        $avatarUrl = '/assets/img/avatars/' . $filename;
-                    }
-                }
-            }
-            // Update email if changed
-            $newEmail = trim($_POST['email'] ?? '');
-            if ($newEmail && $newEmail !== $user['email']) {
-                if (filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
-                    $check = db()->prepare('SELECT id FROM users WHERE email=? AND id!=?');
-                    $check->execute([$newEmail, (int)$user['id']]);
-                    if (!$check->fetch()) {
-                        db()->prepare('UPDATE users SET email=? WHERE id=?')->execute([$newEmail, (int)$user['id']]);
-                    } else {
-                        session_flash('error', 'Email already in use.');
-                        redirect('/?page=account&tab=profile');
-                    }
-                } else {
-                    session_flash('error', 'Invalid email address.');
-                    redirect('/?page=account&tab=profile');
-                }
-            }
-            db()->prepare('UPDATE users SET full_name=?, phone=?, bio=?, avatar=? WHERE id=?')
-                ->execute([$_POST['full_name'], $_POST['phone'], $_POST['bio'], $avatarUrl, (int)$user['id']]);
-            audit('profile_updated', 'users', (string)$user['id']);
-            session_flash('notice', 'Profile updated.');
-            redirect('/?page=account&tab=profile');
-
-        case 'change_password':
-            if (!$user) { redirect('/?page=login'); }
-            $current = (string)$_POST['current_password'];
-            $newPass = (string)$_POST['new_password'];
-            $confirm = (string)$_POST['confirm_password'];
-            if (!password_verify($current, $user['password_hash'])) {
-                session_flash('error', 'Current password is incorrect.');
-                redirect('/?page=account&tab=security');
-            }
-            if ($newPass !== $confirm || strlen($newPass) < 8) {
-                session_flash('error', 'Passwords do not match or too short.');
-                redirect('/?page=account&tab=security');
-            }
-            db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
-                ->execute([password_hash($newPass, PASSWORD_ARGON2ID), (int)$user['id']]);
-            audit('password_changed', 'users', (string)$user['id']);
-            session_flash('notice', 'Password updated.');
-            redirect('/?page=account&tab=security');
-
-        case 'admin_add_product':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $name = trim((string)$_POST['name']);
-            $sku = strtoupper(trim((string)$_POST['sku']));
-            $slug = slugify($name);
-
-            // Determine product image
-            $imageUrl = '/assets/img/products/swag.jpg';
-            if (!empty($_FILES['product_image']['tmp_name'])) {
-                $ext = validate_uploaded_image($_FILES['product_image']);
-                if ($ext) {
-                    $filename = 'product-' . time() . '-' . bin2hex(random_bytes(4)) . '.' . $ext;
-                    $dest = dirname(__DIR__) . '/public/assets/img/products/' . $filename;
-                    if (move_uploaded_file($_FILES['product_image']['tmp_name'], $dest)) {
-                        $imageUrl = '/assets/img/products/' . $filename;
-                    }
-                }
-            } elseif (!empty($_POST['existing_image'])) {
-                $imageUrl = $_POST['existing_image'];
-            }
-
-            $stmt = db()->prepare('INSERT INTO products (name, sku, slug, description, short_description, seo_description, price, sale_price, sizes, colors, images, is_featured, status, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-            $stmt->execute([
-                $name, $sku, $slug,
-                $_POST['description'], $_POST['short_description'] ?? null, $_POST['seo_description'] ?? null,
-                (float)$_POST['price'], $_POST['sale_price'] ? (float)$_POST['sale_price'] : null,
-                json_encode(explode(',', str_replace(' ', '', $_POST['sizes'] ?? 'M,L,XL,XXL,XXXL'))),
-                json_encode(explode(',', $_POST['colors'] ?? 'Black')),
-                json_encode([$imageUrl]),
-                !empty($_POST['is_featured']) ? 1 : 0,
-                $_POST['status'] ?? 'active',
-                $_POST['category_id'] ? (int)$_POST['category_id'] : null
-            ]);
-            $productId = (int)db()->lastInsertId();
-            if ($imageUrl !== '/assets/img/products/swag.jpg') {
-                db()->prepare('INSERT INTO product_images (product_id, url) VALUES (?, ?)')->execute([$productId, $imageUrl]);
-            }
-            db()->prepare('INSERT INTO inventory (product_id, stock_quantity, low_stock_threshold) VALUES (?, ?, ?)')
-                ->execute([$productId, (int)$_POST['stock_quantity'], (int)$_POST['low_stock']]);
-            audit('product_created', 'products', (string)$productId);
-            session_flash('notice', "Product {$name} created.");
-            redirect('/?page=admin&tab=products');
-
-        case 'admin_edit_product':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE products SET name=?, price=?, sale_price=?, status=? WHERE id=?')
-                ->execute([$_POST['name'], (float)$_POST['price'], $_POST['sale_price'] ? (float)$_POST['sale_price'] : null, $_POST['status'], (int)$_POST['id']]);
-            audit('product_updated', 'products', (string)$_POST['id']);
-            session_flash('notice', 'Product updated.');
-            redirect('/?page=admin&tab=products');
-
-        case 'admin_delete_product':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $delId = (int)$_POST['id'];
-            $stmt = db()->prepare('DELETE FROM products WHERE id = ?');
-            $stmt->execute([$delId]);
-            $affected = $stmt->rowCount();
-            if ($affected > 0) {
-                audit('product_deleted', 'products', (string)$delId);
-                session_flash('notice', "Product ID $delId deleted.");
-            } else {
-                session_flash('error', "Product ID $delId not found or already deleted.");
-            }
-            redirect('/?page=admin&tab=products');
-
-        case 'admin_bulk_delete_products':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $ids = array_filter(array_map('intval', (array)($_POST['ids'] ?? [])));
-            if (!empty($ids)) {
-                $placeholders = implode(',', array_fill(0, count($ids), '?'));
-                db()->prepare("DELETE FROM products WHERE id IN ($placeholders)")->execute($ids);
-                audit('products_bulk_deleted', 'products', implode(',', $ids));
-                session_flash('notice', count($ids) . ' products deleted.');
-            }
-            redirect('/?page=admin&tab=products');
-
-         case 'admin_add_coming_soon':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $name = trim($_POST['name']);
-            $releaseDate = $_POST['release_date'] . ' ' . ($_POST['release_time'] ?? '13:00') . ':00';
-            db()->prepare('INSERT INTO coming_soon (name, description, price, image, category_id, release_date, is_notified) VALUES (?, ?, ?, ?, ?, ?, 0)')
-                ->execute([$name, $_POST['description'] ?? '', (float)$_POST['price'], $_POST['image'] ?? '', $_POST['category_id'] ? (int)$_POST['category_id'] : null, $releaseDate]);
-            session_flash('notice', "{$name} added to Coming Soon.");
-            redirect('/?page=admin&tab=comingsoon');
-
-        case 'admin_edit_coming_soon':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $releaseDate = $_POST['release_date'] . ' ' . ($_POST['release_time'] ?? '13:00') . ':00';
-            db()->prepare('UPDATE coming_soon SET name=?, price=?, release_date=?, is_notified=0 WHERE id=?')
-                ->execute([$_POST['name'], (float)$_POST['price'], $releaseDate, (int)$_POST['id']]);
-            session_flash('notice', 'Coming soon item updated. Member notification will re-send.');
-            redirect('/?page=admin&tab=comingsoon');
-
-        case 'admin_delete_coming_soon':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM coming_soon WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Coming soon item deleted.');
-            redirect('/?page=admin&tab=comingsoon');
-
-        case 'admin_update_order':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $orderId = (int)$_POST['order_id'];
-            $status = (string)$_POST['status'];
-            $tracking = trim((string)$_POST['tracking_number']);
-            $carrier = trim((string)$_POST['carrier']);
-            $updates = ['status = ?'];
-            $params = [$status];
-            if ($tracking) { $updates[] = 'tracking_number = ?'; $params[] = $tracking; }
-            if ($carrier) { $updates[] = 'carrier = ?'; $params[] = $carrier; }
-            if ($status === 'shipped') { $updates[] = 'shipped_at = NOW()'; }
-            if ($status === 'delivered') { $updates[] = 'delivered_at = NOW()'; }
-            if (in_array($status, ['paid', 'processing', 'shipped', 'delivered'])) {
-                $updates[] = 'paid_at = COALESCE(paid_at, NOW())';
-            }
-            $params[] = $orderId;
-            db()->prepare('UPDATE orders SET ' . implode(', ', $updates) . ' WHERE id = ?')->execute($params);
-            audit('order_updated', 'orders', (string)$orderId, ['status' => $status]);
-
-            // Send shipped notification email
-            if ($status === 'shipped') {
-                $ord = db()->prepare('SELECT o.*, u.email, u.full_name FROM orders o JOIN users u ON u.id = o.user_id WHERE o.id = ?');
-                $ord->execute([$orderId]);
-                $ordData = $ord->fetch();
-                if ($ordData && $ordData['email']) {
-                    $subject = "Your order #{$ordData['order_number']} has shipped!";
-                    $body = "<h2>Good news, " . e($ordData['full_name'] ?: 'Valued Customer') . "!</h2>";
-                    $body .= "<p>Your order <strong>#{$ordData['order_number']}</strong> has been shipped.</p>";
-                    if ($tracking) {
-                        $body .= "<p><strong>Tracking Number:</strong> " . e($tracking) . "</p>";
-                    }
-                    if ($carrier) {
-                        $body .= "<p><strong>Carrier:</strong> " . e($carrier) . "</p>";
-                    }
-                    $body .= "<p><strong>Order Total:</strong> \$" . number_format((float)$ordData['total'], 2) . "</p>";
-                    $body .= "<p>Thank you for your purchase!</p>";
-                    $body .= "<p style='font-size:12px;color:#888'>Suggawayz</p>";
-                    send_email($ordData['email'], $subject, $body);
-                }
-            }
-
-            session_flash('notice', "Order #{$orderId} updated.");
-            redirect('/?page=admin&tab=orders');
-
-        case 'admin_delete_order':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM orders WHERE id = ?')->execute([(int)$_POST['id']]);
-            audit('order_deleted', 'orders', (string)$_POST['id']);
-            session_flash('notice', 'Order deleted.');
-            redirect('/?page=admin&tab=orders');
-
-        // === CATEGORIES ===
-        case 'admin_add_category':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $name = trim((string)$_POST['name']);
-            $slug = slugify($name);
-            db()->prepare('INSERT INTO categories (name, slug, description, parent_id, sort_order) VALUES (?, ?, ?, ?, ?)')
-                ->execute([$name, $slug, $_POST['description'], $_POST['parent_id'] ? (int)$_POST['parent_id'] : null, (int)$_POST['sort_order']]);
-            audit('category_created', 'categories', $slug);
-            session_flash('notice', "Category {$name} created.");
-            redirect('/?page=admin&tab=categories');
-
-        case 'admin_edit_category':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE categories SET name=?, slug=?, description=?, parent_id=?, sort_order=?, active=? WHERE id=?')
-                ->execute([$_POST['name'], slugify($_POST['name']), $_POST['description'], $_POST['parent_id'] ? (int)$_POST['parent_id'] : null, (int)$_POST['sort_order'], !empty($_POST['active']) ? 1 : 0, (int)$_POST['id']]);
-            session_flash('notice', 'Category updated.');
-            redirect('/?page=admin&tab=categories');
-
-        case 'admin_delete_category':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM categories WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Category deleted.');
-            redirect('/?page=admin&tab=categories');
-
-        // === CUSTOMERS ===
-        case 'admin_add_customer':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $customPw = trim((string)($_POST['password'] ?? ''));
-            $pw = $customPw ?: bin2hex(random_bytes(8));
-            if (!empty($customPw) && strlen($customPw) < 6) {
-                session_flash('error', 'Password must be at least 6 characters.');
-                redirect('/?page=admin&tab=customers');
-            }
-            $hash = password_hash($pw, PASSWORD_ARGON2ID);
-            db()->prepare('INSERT INTO users (role, username, email, password_hash, full_name, phone, is_employee, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, 0, NOW())')
-                ->execute(['customer', $_POST['username'], $_POST['email'], $hash, $_POST['full_name'], $_POST['phone'] ?? null]);
-            $msg = $customPw ? 'Customer created with your chosen password.' : 'Customer created. Temp password: ' . $pw;
-            session_flash('notice', $msg);
-            redirect('/?page=admin&tab=customers');
-
-        case 'admin_edit_customer':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE users SET full_name=?, email=?, phone=?, role=?, is_deleted=? WHERE id=? AND is_employee=0')
-                ->execute([$_POST['full_name'], $_POST['email'], $_POST['phone'], $_POST['role'], !empty($_POST['is_deleted']) ? 1 : 0, (int)$_POST['id']]);
-            session_flash('notice', 'Customer updated.');
-            redirect('/?page=admin&tab=customers');
-
-        // === EMPLOYEES ===
-        case 'admin_add_employee':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $customPw = trim((string)($_POST['password'] ?? ''));
-            $pw = $customPw ?: bin2hex(random_bytes(8));
-            if (!empty($customPw) && strlen($customPw) < 6) {
-                session_flash('error', 'Password must be at least 6 characters.');
-                redirect('/?page=admin&tab=employees');
-            }
-            $hash = password_hash($pw, PASSWORD_ARGON2ID);
-            $role = $_POST['role'] ?? 'support';
-            db()->prepare('INSERT INTO users (role, username, email, password_hash, full_name, phone, is_employee, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, 1, NOW())')
-                ->execute([$role, $_POST['username'], $_POST['email'], $hash, $_POST['full_name'], $_POST['phone'] ?? null]);
-            $uid = (int)db()->lastInsertId();
-            if (in_array($role, ['webmaster', 'super_admin'])) {
-                db()->prepare('INSERT IGNORE INTO admins (user_id, permission_level) VALUES (?, ?)')->execute([$uid, $role]);
-            }
-            audit('employee_created', 'users', (string)$uid);
-            $msg = $customPw ? "Employee created with your chosen password." : "Employee created. Temp password: {$pw}. Tell them to change it.";
-            session_flash('notice', $msg);
-            redirect('/?page=admin&tab=employees');
-
-        case 'admin_edit_employee':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $role = $_POST['role'];
-            db()->prepare('UPDATE users SET full_name=?, email=?, phone=?, role=?, is_deleted=? WHERE id=? AND is_employee=1')
-                ->execute([$_POST['full_name'], $_POST['email'], $_POST['phone'], $role, !empty($_POST['is_deleted']) ? 1 : 0, (int)$_POST['id']]);
-            if (in_array($role, ['webmaster', 'super_admin'])) {
-                db()->prepare('INSERT IGNORE INTO admins (user_id, permission_level) VALUES (?, ?)')->execute([(int)$_POST['id'], $role]);
-            } else {
-                db()->prepare('DELETE FROM admins WHERE user_id = ?')->execute([(int)$_POST['id']]);
-            }
-            audit('employee_updated', 'users', (string)$_POST['id']);
-            session_flash('notice', 'Employee updated.');
-            redirect('/?page=admin&tab=employees');
-
-        case 'admin_employee_reset_password':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $customPw = trim((string)($_POST['new_password'] ?? ''));
-            $pw = $customPw ?: bin2hex(random_bytes(8));
-            if (!empty($customPw) && strlen($customPw) < 6) {
-                session_flash('error', 'Password must be at least 6 characters.');
-                redirect('/?page=admin&tab=employees');
-            }
-            db()->prepare('UPDATE users SET password_hash = ? WHERE id = ? AND is_employee = 1')
-                ->execute([password_hash($pw, PASSWORD_ARGON2ID), (int)$_POST['id']]);
-            $msg = $customPw ? "Password updated to your chosen password." : "Password reset to: {$pw}";
-            session_flash('notice', $msg);
-            redirect('/?page=admin&tab=employees');
-
-        // === PRODUCT IMAGE UPLOAD ===
-        case 'admin_upload_product_image':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $productId = (int)$_POST['product_id'];
-            if (!empty($_FILES['image']['tmp_name'])) {
-                $ext = validate_uploaded_image($_FILES['image']);
-                if ($ext) {
-                    $filename = 'product-' . $productId . '-' . time() . '.' . $ext;
-                    $dest = dirname(__DIR__) . '/public/assets/img/products/' . $filename;
-                    if (move_uploaded_file($_FILES['image']['tmp_name'], $dest)) {
-                        $url = '/assets/img/products/' . $filename;
-                        $stmt = db()->prepare('SELECT images FROM products WHERE id = ?');
-                        $stmt->execute([$productId]);
-                        $existing = $stmt->fetchColumn() ?: '[]';
-                        $imgs = json_decode($existing, true) ?: [];
-                        array_unshift($imgs, $url);
-                        db()->prepare('UPDATE products SET images = ? WHERE id = ?')->execute([json_encode($imgs), $productId]);
-                        db()->prepare('INSERT INTO product_images (product_id, url) VALUES (?, ?)')->execute([$productId, $url]);
-                        session_flash('notice', 'Image uploaded.');
-                    } else {
-                        session_flash('error', 'Failed to save file. Check directory permissions.');
-                    }
-                } else {
-                    session_flash('error', 'Invalid file type. Allowed: jpg, jpeg, png, gif, webp.');
-                }
-            } else {
-                $errMsg = 'Upload failed.';
-                $errCode = $_FILES['image']['error'] ?? 'no file';
-                if ($errCode === UPLOAD_ERR_INI_SIZE || $errCode === UPLOAD_ERR_FORM_SIZE) {
-                    $errMsg = 'File too large. Max upload size: ' . ini_get('upload_max_filesize');
-                } elseif ($errCode !== UPLOAD_ERR_OK && $errCode !== 'no file') {
-                    $errMsg = "Upload error code: $errCode";
-                }
-                session_flash('error', $errMsg);
-            }
-            redirect('/?page=admin&tab=products');
-
-        // === INVENTORY ===
-        case 'admin_add_inventory':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $pid = (int)$_POST['product_id'];
-            $qty = (int)$_POST['stock_quantity'];
-            $locId = $_POST['location_id'] ? (int)$_POST['location_id'] : null;
-            $warehouse = trim((string)$_POST['warehouse']);
-            $threshold = (int)$_POST['low_stock_threshold'];
-            $reorder = (int)$_POST['reorder_level'];
-            $stmt = db()->prepare('SELECT id FROM inventory WHERE product_id = ? AND warehouse = ?');
-            $stmt->execute([$pid, $warehouse]);
-            $existing = $stmt->fetch();
-            if ($existing) {
-                db()->prepare('UPDATE inventory SET stock_quantity = stock_quantity + ?, low_stock_threshold = ?, reorder_level = ? WHERE id = ?')
-                    ->execute([$qty, $threshold, $reorder, $existing['id']]);
-            } else {
-                db()->prepare('INSERT INTO inventory (product_id, warehouse, location_id, stock_quantity, low_stock_threshold, reorder_level) VALUES (?, ?, ?, ?, ?, ?)')
-                    ->execute([$pid, $warehouse, $locId, $qty, $threshold, $reorder]);
-            }
-            db()->prepare('INSERT INTO inventory_movements (product_id, warehouse, type, quantity, note) VALUES (?, ?, "in", ?, "Manual add")')
-                ->execute([$pid, $warehouse, $qty]);
-            session_flash('notice', 'Inventory updated.');
-            redirect('/?page=admin&tab=inventory');
-
-        case 'admin_edit_inventory':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE inventory SET stock_quantity=?, low_stock_threshold=?, reorder_level=?, warehouse=?, location_id=? WHERE id=?')
-                ->execute([(int)$_POST['stock_quantity'], (int)$_POST['low_stock_threshold'], (int)$_POST['reorder_level'], $_POST['warehouse'], $_POST['location_id'] ? (int)$_POST['location_id'] : null, (int)$_POST['id']]);
-            session_flash('notice', 'Inventory record updated.');
-            redirect('/?page=admin&tab=inventory');
-
-        case 'admin_delete_inventory':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM inventory WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Inventory record deleted.');
-            redirect('/?page=admin&tab=inventory');
-
-        case 'admin_add_location':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('INSERT INTO inventory_locations (name, address, contact, phone) VALUES (?, ?, ?, ?)')
-                ->execute([$_POST['name'], $_POST['address'], $_POST['contact'], $_POST['phone']]);
-            session_flash('notice', 'Location added.');
-            redirect('/?page=admin&tab=inventory');
-
-        case 'admin_delete_location':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM inventory_locations WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Location deleted.');
-            redirect('/?page=admin&tab=inventory');
-
-        // === REORDER ===
-        case 'admin_add_reorder':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('INSERT INTO reorder_requests (product_id, location_id, quantity_requested, supplier, notes, requested_by) VALUES (?, ?, ?, ?, ?, ?)')
-                ->execute([(int)$_POST['product_id'], $_POST['location_id'] ? (int)$_POST['location_id'] : null, (int)$_POST['quantity_requested'], $_POST['supplier'], $_POST['notes'], (int)$user['id']]);
-            session_flash('notice', 'Reorder request created.');
-            redirect('/?page=admin&tab=reorder');
-
-        case 'admin_update_reorder':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $status = (string)$_POST['status'];
-            $updates = ['status = ?', 'notes = ?'];
-            $params = [$status, $_POST['notes']];
-            if ($status === 'received') {
-                $updates[] = 'quantity_received = ?';
-                $params[] = (int)$_POST['quantity_received'];
-                $updates[] = 'received_at = NOW()';
-            }
-            if ($status === 'ordered') { $updates[] = 'ordered_at = NOW()'; }
-            $params[] = (int)$_POST['id'];
-            db()->prepare('UPDATE reorder_requests SET ' . implode(', ', $updates) . ' WHERE id = ?')->execute($params);
-            if ($status === 'received') {
-                $rr = db()->query('SELECT product_id, quantity_received FROM reorder_requests WHERE id = ' . (int)$_POST['id'])->fetch();
-                if ($rr) {
-                    db()->prepare('UPDATE inventory SET stock_quantity = stock_quantity + ? WHERE product_id = ?')
-                        ->execute([(int)$rr['quantity_received'], (int)$rr['product_id']]);
-                }
-            }
-            session_flash('notice', 'Reorder updated.');
-            redirect('/?page=admin&tab=reorder');
-
-        case 'admin_delete_reorder':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM reorder_requests WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Reorder deleted.');
-            redirect('/?page=admin&tab=reorder');
-
-        // === PAYMENT SETTINGS ===
-        case 'admin_update_payment':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $id = (int)$_POST['id'];
-            db()->prepare('UPDATE payment_settings SET enabled=?, sandbox_mode=?, label=?, public_key=?, secret_key=?, extra_settings=? WHERE id=?')
-                ->execute([
-                    !empty($_POST['enabled']) ? 1 : 0,
-                    !empty($_POST['sandbox_mode']) ? 1 : 0,
-                    $_POST['label'],
-                    $_POST['public_key'],
-                    $_POST['secret_key'],
-                    json_encode($_POST['extra'] ?? []),
-                    $id
-                ]);
-            session_flash('notice', 'Payment settings updated.');
-            redirect('/?page=admin&tab=payments');
-
-        // === COUPONS ===
-        case 'admin_add_coupon':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $code = strtoupper(trim((string)$_POST['code']));
-            if (empty($code)) { $code = strtoupper(bin2hex(random_bytes(4))); }
-            db()->prepare('INSERT INTO coupons (code, discount_type, discount_value, min_order_amount, max_uses, starts_at, ends_at, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-                ->execute([$code, $_POST['discount_type'], (float)$_POST['discount_value'], $_POST['min_order_amount'] ? (float)$_POST['min_order_amount'] : null, $_POST['max_uses'] ? (int)$_POST['max_uses'] : null, $_POST['starts_at'] ?: null, $_POST['ends_at'] ?: null, !empty($_POST['active']) ? 1 : 0]);
-            session_flash('notice', "Coupon {$code} created.");
-            redirect('/?page=admin&tab=coupons');
-
-        case 'admin_edit_coupon':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE coupons SET code=?, discount_type=?, discount_value=?, min_order_amount=?, max_uses=?, starts_at=?, ends_at=?, active=? WHERE id=?')
-                ->execute([strtoupper(trim((string)$_POST['code'])), $_POST['discount_type'], (float)$_POST['discount_value'], $_POST['min_order_amount'] ? (float)$_POST['min_order_amount'] : null, $_POST['max_uses'] ? (int)$_POST['max_uses'] : null, $_POST['starts_at'] ?: null, $_POST['ends_at'] ?: null, !empty($_POST['active']) ? 1 : 0, (int)$_POST['id']]);
-            session_flash('notice', 'Coupon updated.');
-            redirect('/?page=admin&tab=coupons');
-
-        case 'admin_delete_coupon':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM coupons WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Coupon deleted.');
-            redirect('/?page=admin&tab=coupons');
-
-        // === Pages ===
-        case 'admin_add_page':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $slug = $_POST['slug'] ?: preg_replace('/[^a-z0-9-]/', '', str_replace(' ', '-', strtolower(trim($_POST['title']))));
-            db()->prepare('INSERT INTO pages (title, slug, content, meta_title, meta_description, published) VALUES (?, ?, ?, ?, ?, ?)')
-                ->execute([$_POST['title'], $slug, $_POST['content'], $_POST['meta_title'] ?? null, $_POST['meta_description'] ?? null, (int)(bool)($_POST['published'] ?? 0)]);
-            session_flash('notice', 'Page created.');
-            redirect('/?page=admin&tab=pages');
-
-        case 'admin_edit_page':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE pages SET title=?, slug=?, content=?, published=? WHERE id=?')
-                ->execute([$_POST['title'], $_POST['slug'], $_POST['content'], (int)(bool)($_POST['published'] ?? 0), (int)$_POST['id']]);
-            session_flash('notice', 'Page updated.');
-            redirect('/?page=admin&tab=pages');
-
-        case 'admin_delete_page':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM pages WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Page deleted.');
-            redirect('/?page=admin&tab=pages');
-
-        // === Blog ===
-        case 'admin_add_blog':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $slug = preg_replace('/[^a-z0-9-]/', '', str_replace(' ', '-', strtolower(trim($_POST['title']))));
-            db()->prepare('INSERT INTO blog_posts (title, slug, author, excerpt, content, published, published_at) VALUES (?, ?, ?, ?, ?, ?, NOW())')
-                ->execute([$_POST['title'], $slug, $_POST['author'] ?? 'SUGGAWAYZ Team', $_POST['excerpt'] ?? null, $_POST['content'], (int)(bool)($_POST['published'] ?? 0)]);
-            session_flash('notice', 'Blog post created.');
-            redirect('/?page=admin&tab=blog');
-
-        case 'admin_edit_blog':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE blog_posts SET title=?, author=?, content=?, published=? WHERE id=?')
-                ->execute([$_POST['title'], $_POST['author'], $_POST['content'], (int)(bool)($_POST['published'] ?? 0), (int)$_POST['id']]);
-            session_flash('notice', 'Blog post updated.');
-            redirect('/?page=admin&tab=blog');
-
-        case 'admin_delete_blog':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM blog_posts WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Blog post deleted.');
-            redirect('/?page=admin&tab=blog');
-
-         // === CONTACT / SPAM ===
-        case 'admin_mark_contact_read':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare("UPDATE contact_submissions SET is_read=1 WHERE id=?")->execute([(int)$_POST['id']]);
-            redirect('/?page=admin&tab=contact');
-
-        case 'admin_mark_contact_spam':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare("UPDATE contact_submissions SET is_spam=1 WHERE id=?")->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Marked as spam.');
-            redirect('/?page=admin&tab=contact');
-
-        case 'admin_block_contact':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $email = trim($_POST['email'] ?? '');
-            $ip = trim($_POST['ip'] ?? '');
-            if ($email) {
-                db()->prepare("INSERT IGNORE INTO blocked_contacts (email, ip_address, reason, blocked_by) VALUES (?,?,?,?)")
-                    ->execute([$email, $ip, 'Manually blocked by admin', (int)$user['id']]);
-                session_flash('notice', "Blocked $email");
-            }
-            redirect('/?page=admin&tab=contact');
-
-        case 'admin_delete_contact':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM contact_submissions WHERE id=?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Contact submission deleted.');
-            redirect('/?page=admin&tab=contact');
-
-        case 'admin_set_email_forward':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $email = $_POST['email'] ?? '';
-            $forward = trim($_POST['forward_to'] ?? '');
-            if ($email && $forward && filter_var($forward, FILTER_VALIDATE_EMAIL)) {
-                $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
-                $sqldb->prepare("INSERT INTO alias (address, goto, active) VALUES (?,?,1)")->execute([$email, $forward]);
-            }
-            redirect('/?page=admin&tab=inbox&subtab=accounts');
-
-        case 'admin_delete_email_forward':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
-            $sqldb->prepare("DELETE FROM alias WHERE address=? AND goto=?")->execute([$_POST['email'], '']);
-            // fallback: delete by id
-            if (!empty($_POST['id'])) $sqldb->prepare("DELETE FROM alias WHERE id=?")->execute([(int)$_POST['id']]);
-            redirect('/?page=admin&tab=inbox&subtab=accounts');
-
-        // === SIZE CHARTS ===
-        case 'admin_save_size_chart':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $name = trim($_POST['name'] ?? '');
-            $catId = (int)($_POST['category_id'] ?? 0);
-            $sizes = $_POST['size'] ?? [];
-            $chest = $_POST['chest'] ?? [];
-            $waist = $_POST['waist'] ?? [];
-            $hips = $_POST['hips'] ?? [];
-            $length = $_POST['length'] ?? [];
-            $data = [];
-            foreach ($sizes as $i => $s) {
-                if (trim($s)) $data[] = ['size' => trim($s), 'chest' => trim($chest[$i] ?? ''), 'waist' => trim($waist[$i] ?? ''), 'hips' => trim($hips[$i] ?? ''), 'length' => trim($length[$i] ?? '')];
-            }
-            if ($name && !empty($data)) {
-                db()->prepare("INSERT INTO size_charts (name, category_id, data) VALUES (?,?,?)")->execute([$name, $catId ?: null, json_encode($data)]);
-                session_flash('notice', "Size chart '$name' saved.");
-            }
-            redirect('/?page=admin&tab=sizecharts');
-
-        case 'admin_delete_size_chart':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare("DELETE FROM size_charts WHERE id=?")->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Size chart deleted.');
-            redirect('/?page=admin&tab=sizecharts');
-
-        case 'admin_update_size_chart':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $id = (int)$_POST['id'];
-            $sizes = $_POST['size'] ?? [];
-            $chest = $_POST['chest'] ?? [];
-            $waist = $_POST['waist'] ?? [];
-            $hips = $_POST['hips'] ?? [];
-            $length = $_POST['length'] ?? [];
-            $data = [];
-            foreach ($sizes as $i => $s) {
-                if (trim($s)) $data[] = ['size' => trim($s), 'chest' => trim($chest[$i] ?? ''), 'waist' => trim($waist[$i] ?? ''), 'hips' => trim($hips[$i] ?? ''), 'length' => trim($length[$i] ?? '')];
-            }
-            if (!empty($data)) {
-                db()->prepare("UPDATE size_charts SET data=? WHERE id=?")->execute([json_encode($data), $id]);
-                session_flash('notice', 'Size chart updated.');
-            }
-            redirect('/?page=admin&tab=sizecharts');
-
-        // === Lookbook Events ===
-        case 'admin_add_lookbook':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('INSERT INTO lookbook_events (title, description, event_date, location_name, address, city, state, postal_code, lat, lng, image, status, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-                ->execute([
-                    $_POST['title'], $_POST['description'] ?? null, $_POST['event_date'] ?: null,
-                    $_POST['location_name'] ?? null, $_POST['address'] ?? null, $_POST['city'] ?? null,
-                    $_POST['state'] ?? null, $_POST['postal_code'] ?? null,
-                    $_POST['lat'] !== '' ? (float)$_POST['lat'] : null,
-                    $_POST['lng'] !== '' ? (float)$_POST['lng'] : null,
-                    $_POST['image'] ?? null, $_POST['status'] ?? 'published', (int)($_POST['sort_order'] ?? 0)
-                ]);
-            session_flash('notice', 'Lookbook event created.');
-            redirect('/?page=admin&tab=events');
-
-        case 'admin_edit_lookbook':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE lookbook_events SET title=?, description=?, event_date=?, location_name=?, address=?, city=?, state=?, postal_code=?, lat=?, lng=?, image=?, status=?, sort_order=? WHERE id=?')
-                ->execute([
-                    $_POST['title'], $_POST['description'] ?? null, $_POST['event_date'] ?: null,
-                    $_POST['location_name'] ?? null, $_POST['address'] ?? null, $_POST['city'] ?? null,
-                    $_POST['state'] ?? null, $_POST['postal_code'] ?? null,
-                    $_POST['lat'] !== '' ? (float)$_POST['lat'] : null,
-                    $_POST['lng'] !== '' ? (float)$_POST['lng'] : null,
-                    $_POST['image'] ?? null, $_POST['status'] ?? 'published', (int)($_POST['sort_order'] ?? 0),
-                    (int)$_POST['id']
-                ]);
-            session_flash('notice', 'Lookbook event updated.');
-            redirect('/?page=admin&tab=events');
-
-        case 'admin_delete_lookbook':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM lookbook_events WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Lookbook event deleted.');
-            redirect('/?page=admin&tab=events');
-
-        // === Contact ===
-        case 'admin_mark_contact_read':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE contact_submissions SET is_read=1 WHERE id=?')->execute([(int)$_POST['id']]);
-            redirect('/?page=admin&tab=contact');
-
-        case 'admin_delete_contact':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM contact_submissions WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Submission deleted.');
-            redirect('/?page=admin&tab=contact');
-
-        // === Shipping ===
-        case 'admin_add_shipping':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('INSERT INTO shipping (region, carrier, service_name, base_rate, free_threshold, estimated_days_min, estimated_days_max, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-                ->execute([$_POST['region'], $_POST['carrier'], $_POST['service_name'], (float)$_POST['base_rate'], $_POST['free_threshold'] !== '' ? (float)$_POST['free_threshold'] : null, $_POST['estimated_days_min'] !== '' ? (int)$_POST['estimated_days_min'] : null, $_POST['estimated_days_max'] !== '' ? (int)$_POST['estimated_days_max'] : null, (int)(bool)($_POST['active'] ?? 0)]);
-            session_flash('notice', 'Shipping method added.');
-            redirect('/?page=admin&tab=shipping');
-
-        case 'admin_edit_shipping':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE shipping SET region=?, carrier=?, service_name=?, base_rate=?, free_threshold=?, estimated_days_min=?, estimated_days_max=?, active=? WHERE id=?')
-                ->execute([$_POST['region'], $_POST['carrier'], $_POST['service_name'], (float)$_POST['base_rate'], $_POST['free_threshold'] !== '' ? (float)$_POST['free_threshold'] : null, $_POST['estimated_days_min'] !== '' ? (int)$_POST['estimated_days_min'] : null, $_POST['estimated_days_max'] !== '' ? (int)$_POST['estimated_days_max'] : null, (int)(bool)($_POST['active'] ?? 0), (int)$_POST['id']]);
-            session_flash('notice', 'Shipping method updated.');
-            redirect('/?page=admin&tab=shipping');
-
-        case 'admin_delete_shipping':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM shipping WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Shipping method deleted.');
-            redirect('/?page=admin&tab=shipping');
-
-        // === Prepay ===
-        case 'admin_toggle_prepay':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $enabled = !empty($_POST['enabled']) ? 1 : 0;
-            db()->prepare("UPDATE payment_settings SET enabled = ? WHERE provider = 'prepay'")->execute([$enabled]);
-            session_flash('notice', $enabled ? 'Prepay enabled.' : 'Prepay disabled.');
-            redirect('/?page=admin&tab=settings');
-
-        case 'admin_toggle_maintenance':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $enabled = !empty($_POST['enabled']) ? '1' : '0';
-            set_site_setting('maintenance_mode', $enabled);
-            session_flash('notice', $enabled ? 'Maintenance mode ON.' : 'Maintenance mode OFF.');
-            redirect('/?page=admin&tab=settings');
-
-        case 'admin_add_prepay':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $amount = (float)$_POST['amount'];
-            if ($amount <= 0) { session_flash('error', 'Amount must be positive.'); redirect('/?page=admin&tab=settings'); }
-            db()->prepare('INSERT INTO prepay (amount, notes) VALUES (?, ?)')->execute([$amount, $_POST['notes'] ?? null]);
-            session_flash('notice', '$' . number_format($amount, 2) . ' prepay credit added.');
-            redirect('/?page=admin&tab=settings');
-
-        case 'admin_save_prepay_config':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $cfg = db()->query("SELECT * FROM payment_settings WHERE provider = 'prepay'")->fetch();
-            $extra = $cfg ? json_decode($cfg['extra_settings'] ?? '{}', true) : [];
-            $extra['google_maps_api_key'] = $_POST['google_maps_api_key'] ?? '';
-            $json = json_encode($extra);
-            if ($cfg) {
-                db()->prepare("UPDATE payment_settings SET extra_settings=? WHERE provider='prepay'")->execute([$json]);
-            } else {
-                db()->prepare("INSERT INTO payment_settings (provider, enabled, label, extra_settings) VALUES ('prepay', 0, 'Prepay (Testing)', ?)")->execute([$json]);
-            }
-            session_flash('notice', 'Config saved.');
-            redirect('/?page=admin&tab=settings');
-
-        case 'admin_update_site_settings':
-            if (!$user || !is_admin($user)) { abort(403); }
-             $fields = ['footer_tagline','hero_title','hero_subtitle','hero_subscribe','site_icon_text',
-                        'email_smtp_host','email_smtp_port','email_smtp_username',
-                        'email_smtp_encryption','email_from_address','email_from_name',
-                        'printer_type','printer_ip','printer_port','pos_tax_rate',
-                        'imap_host','imap_port','imap_user'];
-            foreach ($fields as $f) {
-                if (isset($_POST[$f])) set_site_setting($f, $_POST[$f]);
-            }
-            if (!empty($_POST['email_smtp_password'])) {
-                set_site_setting('email_smtp_password', encrypt_value($_POST['email_smtp_password']));
-            }
-            if (!empty($_POST['imap_pass'])) {
-                set_site_setting('imap_pass', encrypt_value($_POST['imap_pass']));
-            }
-            if (isset($_POST['social_links'])) {
-                set_site_setting('social_links', $_POST['social_links']);
-            }
-            session_flash('notice', 'Site settings saved.');
-            redirect('/?page=admin&tab=settings');
-
-        case 'admin_send_test_email':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $to = $_POST['test_email'] ?? $user['email'];
-            $subject = 'Test Email from SUGGAWAYZ';
-            $message = 'This is a test email from your SUGGAWAYZ store settings.';
-            $from = site_setting('email_from_address', 'noreply@suggawayz.com');
-            $fromName = site_setting('email_from_name', 'SUGGAWAYZ');
-            $headers = 'From: ' . $fromName . ' <' . $from . '>' . "\r\n" . 'Content-Type: text/plain; charset=utf-8' . "\r\n";
-            $sent = mail($to, $subject, $message, $headers);
-            session_flash($sent ? 'notice' : 'error', $sent ? 'Test email sent to ' . e($to) : 'Failed to send email. Check SMTP settings.');
-            redirect('/?page=admin&tab=settings');
-
-        case 'admin_send_bulk_email':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $subject = trim((string)$_POST['subject']);
-            $body = trim((string)$_POST['body']);
-            if (empty($subject) || empty($body)) { session_flash('error', 'Subject and body required.'); redirect('/?page=admin&tab=newsletter'); }
-            $htmlBody = nl2br(e($body));
-            // Add footer with unsubscribe link
-            $htmlBody .= '<br><br><hr><p style="font-size:11px;color:#888">You\'re receiving this because you subscribed to SUGGAWAYZ updates. <a href="https://suggawayz.com/?action=unsubscribe&email=%email%">Unsubscribe</a></p>';
-
-            if (!empty($_POST['test_email'])) {
-                $email = $user['email'];
-                if (send_email($email, "[TEST] " . $subject, str_replace('%email%', $email, $htmlBody))) {
-                    session_flash('notice', 'Test email sent to ' . $email);
-                } else {
-                    session_flash('error', 'Failed to send test email. Check SMTP settings.');
-                }
-                redirect('/?page=admin&tab=newsletter');
-            }
-
-            $subs = db()->query('SELECT email FROM subscribers WHERE is_active = 1')->fetchAll(PDO::FETCH_COLUMN);
-            if (empty($subs)) { session_flash('error', 'No active subscribers.'); redirect('/?page=admin&tab=newsletter'); }
-            $sent = 0; $failed = 0;
-            foreach ($subs as $email) {
-                $personalized = str_replace('%email%', $email, $htmlBody);
-                if (send_email($email, $subject, $personalized)) $sent++; else $failed++;
-            }
-            db()->prepare("INSERT INTO newsletter_sent (subject, body, recipient_count, sent_by) VALUES (?,?,?,?)")->execute([$subject, $body, $sent, (int)$user['id']]);
-            session_flash('notice', "Email sent to {$sent} subscribers" . ($failed ? ", {$failed} failed." : '.'));
-            redirect('/?page=admin&tab=newsletter');
-
-        // === POS ===
-        case 'clock_in':
-            if (!$user) { abort(403); }
-            $result = clock_in((int)$user['id'], (float)($_POST['opening_balance'] ?? 0));
-            if ($result['success']) {
-                audit('clocked_in', 'clock_events', (string)$user['id']);
-                session_flash('notice', 'Clocked in. POS drawer is open.');
-            } else {
-                session_flash('error', $result['message']);
-            }
-            redirect('/?page=admin&tab=pos');
-
-        case 'clock_out':
-            if (!$user) { abort(403); }
-            $result = clock_out((int)$user['id']);
-            if ($result['success']) {
-                audit('clocked_out', 'clock_events', (string)$user['id'], ['closing_balance' => $result['closing_balance']]);
-                $parts = ["Clocked out. Opening: \$" . number_format($result['opening_balance'], 2) . " — Closing: \$" . number_format($result['closing_balance'], 2)];
-                foreach ($result['summary'] as $s) {
-                    $parts[] = e(ucfirst(str_replace('_', ' ', $s['type']))) . ': ' . (int)$s['count'] . 'x $' . number_format((float)$s['total'], 2);
-                }
-                session_flash('notice', implode(' | ', $parts));
-            } else {
-                session_flash('error', $result['message']);
-            }
-            redirect('/?page=admin&tab=pos');
-
-        case 'pos_cash_in':
-            if (!$user) { abort(403); }
-            $clocked = is_clocked_in((int)$user['id']);
-            if (!$clocked) { session_flash('error', 'You must be clocked in.'); redirect('/?page=admin&tab=pos'); }
-            $session = db()->query('SELECT id FROM pos_sessions WHERE employee_id = ' . (int)$user['id'] . ' AND status = "open" ORDER BY id DESC')->fetch();
-            if (!$session) { session_flash('error', 'No open POS session.'); redirect('/?page=admin&tab=pos'); }
-            db()->prepare('INSERT INTO pos_transactions (pos_session_id, type, amount, payment_method, reference, description) VALUES (?, "cash_in", ?, ?, ?, ?)')
-                ->execute([(int)$session['id'], (float)$_POST['amount'], $_POST['payment_method'] ?? 'cash', $_POST['reference'] ?? null, $_POST['description'] ?? 'Cash in']);
-            session_flash('notice', 'Cash in recorded.');
-            redirect('/?page=admin&tab=pos');
-
-        case 'pos_cash_out':
-            if (!$user) { abort(403); }
-            $clocked = is_clocked_in((int)$user['id']);
-            if (!$clocked) { session_flash('error', 'You must be clocked in.'); redirect('/?page=admin&tab=pos'); }
-            $session = db()->query('SELECT id FROM pos_sessions WHERE employee_id = ' . (int)$user['id'] . ' AND status = "open" ORDER BY id DESC')->fetch();
-            if (!$session) { session_flash('error', 'No open POS session.'); redirect('/?page=admin&tab=pos'); }
-            db()->prepare('INSERT INTO pos_transactions (pos_session_id, type, amount, payment_method, reference, description) VALUES (?, "cash_out", ?, ?, ?, ?)')
-                ->execute([(int)$session['id'], (float)$_POST['amount'], 'cash', $_POST['reference'] ?? null, $_POST['description'] ?? 'Cash out']);
-            session_flash('notice', 'Cash out recorded.');
-            redirect('/?page=admin&tab=pos');
-
-        case 'pos_complete_sale':
-            if (!$user) { abort(403); }
-            $clocked = is_clocked_in((int)$user['id']);
-            if (!$clocked) { session_flash('error', 'You must be clocked in.'); redirect('/?page=admin&tab=pos'); }
-            $session = db()->query('SELECT id FROM pos_sessions WHERE employee_id = ' . (int)$user['id'] . ' AND status = "open" ORDER BY id DESC')->fetch();
-            if (!$session) { session_flash('error', 'No open POS session.'); redirect('/?page=admin&tab=pos'); }
-            $items = json_decode($_POST['items'] ?? '[]', true);
-            $total = (float)($_POST['total'] ?? 0);
-            $paymentType = $_POST['payment_type'] ?? 'cash';
-            $itemNames = [];
-            foreach ($items as $item) {
-                $itemNames[] = $item['name'] . ' x' . $item['qty'];
-            }
-            db()->prepare('INSERT INTO pos_transactions (pos_session_id, type, amount, payment_method, reference, description) VALUES (?, "sale", ?, ?, ?, ?)')
-                ->execute([(int)$session['id'], $total, $paymentType, implode(', ', $itemNames), json_encode($items)]);
-            $txId = (int)db()->lastInsertId();
-            session_flash('notice', 'Sale completed: $' . number_format($total, 2));
-            redirect('/?page=receipt&transaction_id=' . $txId);
-
-        // === Bug Reports ===
-        case 'bug_report':
-            $name = trim((string)$_POST['reporter_name']);
-            $email = trim((string)$_POST['reporter_email']);
-            $subject = trim((string)$_POST['subject']);
-            $desc = trim((string)$_POST['description']);
-            $pageUrl = trim((string)$_POST['page_url']);
-            $screenshotPath = null;
-
-            if (!empty($_FILES['screenshot']['tmp_name'])) {
-                $ext = validate_uploaded_image($_FILES['screenshot']);
-                if ($ext) {
-                    $filename = 'bug-' . time() . '-' . bin2hex(random_bytes(4)) . '.' . $ext;
-                    $dest = dirname(__DIR__) . '/public/assets/img/bugs/' . $filename;
-                    $bugDir = dirname(__DIR__) . '/public/assets/img/bugs';
-                    if (!is_dir($bugDir)) { mkdir($bugDir, 0777, true); }
-                    if (move_uploaded_file($_FILES['screenshot']['tmp_name'], $dest)) {
-                        $screenshotPath = '/assets/img/bugs/' . $filename;
-                    }
-                }
-            }
-
-            db()->prepare('INSERT INTO bug_reports (reporter_name, reporter_email, subject, description, page_url, screenshot) VALUES (?, ?, ?, ?, ?, ?)')
-                ->execute([$name ?: null, $email ?: null, $subject, $desc, $pageUrl ?: null, $screenshotPath]);
-            session_flash('notice', 'Bug report submitted. Thank you for helping us improve!');
-            redirect('/?page=bug-report');
-
-        case 'admin_update_bug_status':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE bug_reports SET status = ? WHERE id = ?')
-                ->execute([$_POST['status'], (int)$_POST['id']]);
-            session_flash('notice', 'Bug status updated.');
-            redirect('/?page=admin&tab=bugreports&bug_status=' . urlencode($_POST['status']));
-
-        case 'admin_delete_bug_report':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM bug_reports WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Bug report deleted.');
-            redirect('/?page=admin&tab=bugreports');
-
-        // === TODOS ===
-        case 'admin_add_todo':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $title = trim((string)$_POST['title']);
-            if ($title) {
-                $stmt = db()->prepare('INSERT INTO todos (title, created_by) VALUES (?, ?)');
-                $stmt->execute([$title, (int)$user['id']]);
-                session_flash('notice', 'Task added.');
-            }
-            redirect('/?page=admin&tab=todos');
-
-        case 'admin_edit_todo':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $title = trim((string)$_POST['title']);
-            if ($title) {
-                db()->prepare('UPDATE todos SET title = ? WHERE id = ?')->execute([$title, (int)$_POST['id']]);
-                session_flash('notice', 'Task updated.');
-            }
-            redirect('/?page=admin&tab=todos');
-
-        case 'admin_delete_todo':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('DELETE FROM todos WHERE id = ?')->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Task deleted.');
-            redirect('/?page=admin&tab=todos');
-
-        case 'admin_toggle_todo':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE todos SET is_completed = IF(is_completed, 0, 1) WHERE id = ?')->execute([(int)$_POST['id']]);
-            redirect('/?page=admin&tab=todos');
-
-        case 'admin_toggle_todo_active':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare('UPDATE todos SET is_active = IF(is_active, 0, 1) WHERE id = ?')->execute([(int)$_POST['id']]);
-            redirect('/?page=admin&tab=todos');
-
-        // === ADMIN MEMBERSHIPS ===
-        case 'admin_add_membership_plan':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $benefits = array_filter(array_map('trim', explode("\n", $_POST['benefits'] ?? '')));
-            db()->prepare("INSERT INTO membership_plans (name, description, price, benefits) VALUES (?,?,?,?)")
-                ->execute([$_POST['name'], $_POST['description'], (float)$_POST['price'], json_encode(array_values($benefits))]);
-            session_flash('notice', 'Membership plan created.');
-            redirect('/?page=admin&tab=memberships');
-
-        case 'admin_edit_membership_plan':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $id = (int)$_POST['id'];
-            $benefits = array_filter(array_map('trim', explode("\n", $_POST['benefits'] ?? '')));
-            db()->prepare("UPDATE membership_plans SET name=?, description=?, price=?, benefits=?, is_active=? WHERE id=?")
-                ->execute([$_POST['name'], $_POST['description'], (float)$_POST['price'], json_encode(array_values($benefits)), (int)$_POST['is_active'], $id]);
-            session_flash('notice', 'Plan updated.');
-            redirect('/?page=admin&tab=memberships');
-
-        case 'admin_delete_membership_plan':
-            if (!$user || !is_admin($user)) { abort(403); }
-            db()->prepare("DELETE FROM membership_plans WHERE id=?")->execute([(int)$_POST['id']]);
-            session_flash('notice', 'Plan deleted.');
-            redirect('/?page=admin&tab=memberships');
-
-        case 'admin_generate_invoice':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $uid = (int)$_POST['user_id'];
-            $amount = (float)($_POST['amount'] ?? 35);
-            $invNum = 'INV-MEM-' . time() . '-' . $uid;
-            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")->execute([$uid, $invNum, $amount]);
-            session_flash('notice', "Invoice $invNum generated.");
-            redirect('/?page=admin&tab=memberships');
-
-        case 'admin_notify_member_drops':
-            if (!$user || !is_admin($user)) { abort(403); }
-            $notified = 0;
-            $drops = db()->query("SELECT id, name, DATE(release_date) as rdate FROM coming_soon WHERE is_notified=0 AND release_date IS NOT NULL")->fetchAll();
-            $members = db()->query("SELECT u.email, u.full_name FROM user_memberships m JOIN users u ON u.id=m.user_id WHERE m.status='active'")->fetchAll();
-            foreach ($drops as $drop) {
-                $stmt = db()->prepare("SELECT DATEDIFF(?, CURDATE())");
-                $stmt->execute([$drop['rdate']]);
-                $daysUntil = (int)$stmt->fetchColumn();
-                if ($daysUntil <= 15 && $daysUntil >= 0) {
-                    foreach ($members as $member) {
-                        $body = "Hey {$member['full_name']},<br><br>🚀 <strong>{$drop['name']}</strong> drops in {$daysUntil} days!<br><br>"
-                            . "As a <strong>Sugga Gang Member</strong>, you get:<br>"
-                            . "✅ <strong>Early access</strong> before the general public<br>"
-                            . "✅ <strong>15% off</strong> any order of $75+ (use your membership discount)<br><br>"
-                            . "Stay tuned — your exclusive early access link will be sent soon.<br><br>"
-                            . "— SUGGAWAYZ";
-                        if (send_email($member['email'], "🔔 Member Early Access: {$drop['name']} drops in {$daysUntil} days!", $body)) $notified++;
-                    }
-                    db()->prepare("UPDATE coming_soon SET is_notified=1 WHERE id=?")->execute([(int)$drop['id']]);
-                }
-            }
-            session_flash('notice', "Notified {$notified} members about " . count($drops) . " upcoming drops.");
-            redirect('/?page=admin&tab=newsletter');
-
-        // === EMAIL ACCOUNTS ===
-        case 'admin_create_email':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $localPart = trim($_POST['local_part'] ?? '');
-            $fullName = trim($_POST['full_name'] ?? '');
-            $password = $_POST['password'] ?? '';
-            $domain = 'suggawayz.com';
-            $quota = ((int)($_POST['quota'] ?? 1024)) * 1048576;
-            if (!$localPart || strlen($password) < 6) { session_flash('error', 'Username and password (min 6 chars) required.'); redirect('/?page=admin&tab=inbox&subtab=accounts'); }
-            $email = "$localPart@$domain";
-            $maildir = "$domain/$localPart/";
-            $hash = crypt($password, '$1$' . bin2hex(random_bytes(6)));
-            $dbPath = '/www/vmail/postfixadmin.db';
-            if (!file_exists($dbPath)) { session_flash('error', 'Mail database not found.'); redirect('/?page=admin&tab=inbox&subtab=accounts'); }
-            try {
-                $sqldb = new PDO("sqlite:$dbPath");
-                $stmt = $sqldb->prepare("INSERT INTO mailbox (username, password, password_encode, full_name, maildir, quota, local_part, domain, created, modified, active) VALUES (?,?,'{MD5-CRYPT}',?,?,?,?,?,datetime('now'),datetime('now'),1)");
-                $stmt->execute([$email, $hash, $fullName, $maildir, $quota, $localPart, $domain]);
-                $mailDirPath = "/www/vmail/$domain/$localPart";
-                if (!is_dir($mailDirPath)) @mkdir($mailDirPath, 0755, true);
-                // Store plain password for webmail access
-                $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
-                $creds[$email] = $password;
-                set_site_setting('_mailbox_creds', json_encode($creds));
-                // Grant access + notify all webmaster/super_admin users
-                $admins = db()->query("SELECT id, email, full_name, username FROM users WHERE role IN ('webmaster','super_admin') AND is_deleted=0")->fetchAll();
-                foreach ($admins as $admin) {
-                    db()->prepare("INSERT IGNORE INTO email_access (user_id, mailbox_email) VALUES (?,?)")->execute([(int)$admin['id'], $email]);
-                }
-                $subject = "New email account created: $email";
-                $body = "A new email account has been created:<br><br>
-                    <strong>Email:</strong> $email<br>
-                    <strong>Password:</strong> $password<br>
-                    <strong>Created by:</strong> {$user['full_name']} ({$user['username']})<br><br>
-                    You can access this mailbox in the <a href='https://suggawayz.com/?page=admin&tab=inbox'>Admin Inbox</a>.<br><br>
-                    — SUGGAWAYZ Mail System";
-                foreach ($admins as $admin) {
-                    $to = $admin['email'] ?: $admin['username'];
-                    send_email($to, $subject, $body);
-                }
-                session_flash('notice', "Email account $email created. " . count($admins) . " admin(s) notified.");
-            } catch (Exception $e) {
-                session_flash('error', 'Failed to create email: ' . $e->getMessage());
-            }
-            redirect('/?page=admin&tab=inbox&subtab=accounts');
-
-        case 'admin_delete_email':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $email = $_POST['email'] ?? '';
-            if ($email) {
-                $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
-                $sqldb->prepare("DELETE FROM mailbox WHERE username=?")->execute([$email]);
-                // Clean up maildir
-                list($local, $domain) = explode('@', $email);
-                $maildir = "/www/vmail/$domain/$local";
-                if (is_dir($maildir)) {
-                    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($maildir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
-                    foreach ($it as $f) $f->isDir() ? rmdir($f->getPathname()) : unlink($f->getPathname());
-                    rmdir($maildir);
-                }
-                // Clear password from site settings
-                $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
-                unset($creds[$email]);
-                set_site_setting('_mailbox_creds', json_encode($creds));
-                // Clear email access
-                db()->prepare("DELETE FROM email_access WHERE mailbox_email=?")->execute([$email]);
-                session_flash('notice', "Email $email deleted.");
-            }
-            redirect('/?page=admin&tab=inbox&subtab=accounts');
-
-        case 'admin_change_email_password':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $email = $_POST['email'] ?? '';
-            $newPass = $_POST['new_password'] ?? '';
-            if ($email && strlen($newPass) >= 6) {
-                $hash = crypt($newPass, '$1$' . bin2hex(random_bytes(6)));
-                $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
-                $sqldb->prepare("UPDATE mailbox SET password=?, modified=datetime('now') WHERE username=?")->execute([$hash, $email]);
-                $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
-                $creds[$email] = $newPass;
-                set_site_setting('_mailbox_creds', json_encode($creds));
-                session_flash('notice', "Password changed for $email.");
-            } else {
-                session_flash('error', 'Password must be at least 6 characters.');
-            }
-            redirect('/?page=admin&tab=inbox&subtab=accounts');
-
-        case 'admin_save_email_access':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $access = $_POST['access'] ?? [];
-            db()->prepare("DELETE FROM email_access")->execute();
-            foreach ($access as $uid => $mailboxes) {
-                foreach ($mailboxes as $mbox) {
-                    db()->prepare("INSERT INTO email_access (user_id, mailbox_email) VALUES (?,?)")->execute([(int)$uid, $mbox]);
-                }
-            }
-            session_flash('notice', 'Email access updated.');
-            redirect('/?page=admin&tab=inbox&subtab=accounts');
-
-        case 'admin_send_email':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $from = $_POST['from_email'] ?? site_setting('email_from_address', 'noreply@suggawayz.com');
-            $to = trim($_POST['to_email'] ?? '');
-            $subject = trim($_POST['subject'] ?? '');
-            $body = trim($_POST['body'] ?? '');
-            if ($to && $subject && $body) {
-                $htmlBody = nl2br(e($body));
-                $sent = send_email($to, $subject, $htmlBody);
-                if ($sent) {
-                    session_flash('notice', "Email sent to $to");
-                } else {
-                    session_flash('error', 'Failed to send email. Check SMTP settings.');
-                }
-            } else {
-                session_flash('error', 'To, Subject, and Body are required.');
-            }
-            redirect('/?page=admin&tab=inbox&subtab=compose');
-
-        case 'admin_delete_message':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $mailbox = $_POST['mailbox'] ?? '';
-            $msgSeq = (int)($_POST['msg_uid'] ?? 0);
-            if ($mailbox && $msgSeq) {
-                $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
-                $pass = $creds[$mailbox] ?? '';
-                if ($pass) {
-                    $host = site_setting('imap_host', 'localhost');
-                    $port = (int)site_setting('imap_port', '143');
-                    $folder = $_POST['folder'] ?? 'INBOX';
-                    if (imap_delete_msg($host, $port, $mailbox, $pass, $folder, $msgSeq)) {
-                        session_flash('notice', "Message deleted.");
-                    } else {
-                        session_flash('error', "Failed to delete message.");
-                    }
-                }
-            }
-            redirect('/?page=admin&tab=inbox&subtab=inbox&mailbox=' . urlencode($mailbox) . '&_=' . time());
-
-        case 'admin_bulk_delete_msgs':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $mailbox = $_POST['mailbox'] ?? '';
-            $folder = $_POST['folder'] ?? 'INBOX';
-            $emptyAll = !empty($_POST['empty_all']);
-            $msgIds = $_POST['msg_ids'] ?? [];
-            if ($mailbox) {
-                $creds = json_decode(site_setting('_mailbox_creds', '{}'), true);
-                $pass = $creds[$mailbox] ?? '';
-                if ($pass) {
-                    $host = site_setting('imap_host', 'localhost');
-                    $port = (int)site_setting('imap_port', '143');
-                    $deleted = 0;
-                    if ($emptyAll) {
-                        $all = imap_fetch_mail($host, $port, $mailbox, $pass, $folder, 9999);
-                        foreach ($all as $m) { if (imap_delete_msg($host, $port, $mailbox, $pass, $folder, $m['uid'])) $deleted++; }
-                        session_flash('notice', "Emptied {$folder}: {$deleted} messages deleted.");
-                    } else {
-                        $ids = array_filter(array_map('intval', (array)$msgIds));
-                        foreach ($ids as $id) { if (imap_delete_msg($host, $port, $mailbox, $pass, $folder, $id)) $deleted++; }
-                        session_flash('notice', "{$deleted} message(s) deleted.");
-                    }
-                }
-            }
-            redirect('/?page=admin&tab=inbox&subtab=inbox&mailbox=' . urlencode($mailbox) . '&folder=' . urlencode($folder) . '&_=' . time());
-
-        case 'admin_security_fix':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $fixed = [];
-
-            // Fix 1: Disable display_errors
-            $bootstrap = dirname(__DIR__) . '/app/bootstrap.php';
-            $content = file_get_contents($bootstrap);
-            if (strpos($content, "ini_set('display_errors', '0')") === false) {
-                $content = str_replace("ini_set('display_errors', '1')", "ini_set('display_errors', '0')", $content);
-                file_put_contents($bootstrap, $content);
-                $fixed[] = 'Disabled display_errors in bootstrap.php';
-            }
-
-            // Fix 2: Encrypt SMTP password if stored as plaintext
-            $smtpPass = site_setting('email_smtp_password', '');
-            if ($smtpPass && !decrypt_value($smtpPass)) {
-                set_site_setting('email_smtp_password', encrypt_value($smtpPass));
-                $fixed[] = 'Encrypted SMTP password';
-            }
-
-            // Fix 3: Fix session directory permissions
-            $sessDir = dirname(__DIR__) . '/storage/sessions';
-            if (is_dir($sessDir)) {
-                chmod($sessDir, 0755);
-                $fixed[] = 'Fixed session directory permissions';
-            }
-
-            if (empty($fixed)) $fixed[] = 'No fixes needed — everything looks good.';
-            session_flash('notice', implode('<br>', $fixed));
-            redirect('/?page=admin&tab=security');
-
-        case 'admin_create_backup':
-            if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { abort(403); }
-            $backupDir = dirname(__DIR__) . '/storage/backups';
-            if (!is_dir($backupDir)) mkdir($backupDir, 0755, true);
-
-            // Keep max 2 backups — remove oldest
-            $existing = is_dir($backupDir) ? array_diff(scandir($backupDir), ['.','..']) : [];
-            sort($existing);
-            while (count($existing) >= 2) {
-                $oldest = array_shift($existing);
-                @unlink($backupDir . '/' . $oldest);
-            }
-
-            $filename = 'suggawayz-backup-' . date('Y-m-d-Hi') . '.sql';
-            $path = $backupDir . '/' . $filename;
-            $config = require dirname(__DIR__) . '/config/database.php';
-            $backupOk = false;
-
-            if (function_exists('exec')) {
-                $cmd = sprintf('mysqldump -h%s -P%s -u%s -p%s %s --no-tablespaces > %s 2>/dev/null',
-                    escapeshellarg($config['host']), escapeshellarg($config['port']),
-                    escapeshellarg($config['username']), escapeshellarg($config['password']),
-                    escapeshellarg($config['database']), escapeshellarg($path));
-                exec($cmd, $output, $rc);
-                $backupOk = ($rc === 0 && file_exists($path) && filesize($path) > 0);
-            }
-
-            if (!$backupOk) {
-                $tables = db()->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN);
-                $sql = "-- SUGGAWAYZ Database Backup\n-- Date: " . date('Y-m-d H:i:s') . "\n\n";
-                foreach ($tables as $table) {
-                    $create = db()->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_NUM);
-                    $sql .= "DROP TABLE IF EXISTS `$table`;\n{$create[1]};\n\n";
-                    $rows = db()->query("SELECT * FROM `$table`")->fetchAll(PDO::FETCH_NUM);
-                    foreach ($rows as $row) {
-                        $vals = array_map(fn($v) => $v === null ? 'NULL' : "'" . addslashes((string)$v) . "'", $row);
-                        $sql .= "INSERT INTO `$table` VALUES (" . implode(',', $vals) . ");\n";
-                    }
-                    $sql .= "\n";
-                }
-                file_put_contents($path, $sql);
-                $backupOk = file_exists($path) && filesize($path) > 0;
-            }
-
-            if ($backupOk) {
-                session_flash('notice', "Backup created: {$filename}");
-            } else {
-                session_flash('error', 'Backup failed. Check storage permissions.');
-            }
-            redirect('/?page=admin&tab=security');
-
-        case 'add_membership_to_cart':
-            if (!$user) { session_flash('error', 'Please log in.'); redirect('/?page=login'); }
-            $planId = (int)($_POST['plan_id'] ?? 0);
-            $plan = db()->prepare('SELECT * FROM membership_plans WHERE id=? AND is_active=1');
-            $plan->execute([$planId]);
-            $planData = $plan->fetch();
-            if (!$planData) { session_flash('error', 'Invalid plan.'); redirect('/?page=shop&category=sugga-gang-member'); }
-            // Check DEV code for test plans
-            if (stripos($planData['name'], 'test') !== false) {
-                $devCode = trim($_POST['dev_code'] ?? '');
-                if (strtoupper($devCode) !== 'DEV') {
-                    session_flash('error', 'This plan requires the DEV code to purchase.');
-                    redirect('/?page=shop&category=sugga-gang-member');
-                }
-            }
-            add_membership_to_cart($planId);
-            session_flash('notice', 'Membership added to cart.');
-            redirect('/?page=cart');
-
-        case 'join_membership':
-            if (!$user) { session_flash('error', 'Please log in to join.'); redirect('/?page=login'); }
-            $planId = (int)($_POST['plan_id'] ?? 0);
-            $autoPay = !empty($_POST['auto_pay']);
-            $plan = db()->prepare('SELECT * FROM membership_plans WHERE id=? AND is_active=1');
-            $plan->execute([$planId]);
-            $planData = $plan->fetch();
-            if (!$planData) { session_flash('error', 'Invalid plan.'); redirect('/?page=membership'); }
-            $existing = db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active'");
-            $existing->execute([(int)$user['id']]);
-            if ($existing->fetch()) { session_flash('error', 'You already have an active membership.'); redirect('/?page=membership'); }
-            db()->prepare("INSERT INTO user_memberships (user_id, plan_id, status, auto_pay, start_date, end_date) VALUES (?,?,'active',?,NOW(),DATE_ADD(NOW(), INTERVAL 1 MONTH))")
-                ->execute([(int)$user['id'], $planId, $autoPay ? 1 : 0]);
-            $invNum = 'INV-MEM-' . time();
-            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")
-                ->execute([(int)$user['id'], $invNum, (float)$planData['price']]);
-            session_flash('notice', 'Welcome to the Sugga Gang! 🎉 Your first invoice has been generated.');
-            redirect('/?page=membership');
-
-        case 'paypal_create_order':
-            header('Content-Type: application/json');
-            try {
-                $subtotal = cart_total();
-                $items = cart_items();
-                if (empty($items)) { echo json_encode(['error' => 'Cart empty.']); exit; }
-
-                $couponCode = $_SESSION['coupon'] ?? null;
-                $discount = 0.0; $freeShipping = false;
-                if ($couponCode) {
-                    $result = apply_coupon($couponCode, $subtotal);
-                    if ($result['success']) { $discount = (float)$result['discount']; $freeShipping = !empty($result['free_shipping']); }
-                }
-                $memberDiscount = $user ? get_member_discount((int)$user['id'], $subtotal) : 0;
-                $discount = max($discount, $memberDiscount);
-                $taxRate = config('app.tax_rate', 8.25);
-                $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
-                $shippingCost = 0.0;
-                $selectedMethod = $_POST['shipping_method'] ?? $_SESSION['checkout_shipping'] ?? null;
-                if ($selectedMethod) {
-                    $stmt = db()->prepare('SELECT * FROM shipping WHERE id = ? AND active = 1');
-                    $stmt->execute([(int)$selectedMethod]);
-                    $sRow = $stmt->fetch();
-                    if ($sRow && !$freeShipping) { $itemCount = array_sum(array_column($items, 'quantity')); $shippingCost = (float)$sRow['base_rate'] + ((float)($sRow['per_item_rate'] ?? 0) * $itemCount); }
-                }
-                $total = round($subtotal - $discount + $tax + $shippingCost, 2);
-
-                $ppConfig = db()->query("SELECT public_key, secret_key FROM payment_settings WHERE provider='paypal'")->fetch();
-                $ch = curl_init('https://api-m.paypal.com/v1/oauth2/token');
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_USERPWD, ($ppConfig['public_key'] ?? '') . ':' . ($ppConfig['secret_key'] ?? ''));
-                curl_setopt($ch, CURLOPT_POSTFIELDS, 'grant_type=client_credentials');
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: application/json', 'Accept-Language: en_US']);
-                $authRes = curl_exec($ch); $authHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-                if ($authHttp !== 200) { echo json_encode(['error' => 'PayPal auth failed.']); exit; }
-                $auth = json_decode($authRes, true);
-                $ch = curl_init('https://api-m.paypal.com/v2/checkout/orders');
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['intent'=>'CAPTURE','purchase_units'=>[['amount'=>['currency_code'=>'USD','value'=>number_format($total,2,'.','')]]]]));
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json','Authorization: Bearer ' . ($auth['access_token'] ?? '')]);
-                $orderRes = curl_exec($ch); $orderHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-                if ($orderHttp !== 201) { echo json_encode(['error' => 'PayPal create order failed.']); exit; }
-                $ppOrder = json_decode($orderRes, true);
-                echo json_encode(['id' => $ppOrder['id'] ?? '']);
-            } catch (\Throwable $e) { echo json_encode(['error' => $e->getMessage()]); }
-            exit;
-
-        case 'paypal_capture_order':
-            header('Content-Type: application/json');
-            try {
-                $paypalOrderId = $_POST['paypal_order_id'] ?? '';
-                if (!$paypalOrderId) { echo json_encode(['error' => 'Missing order ID.']); exit; }
-                $ppConfig = db()->query("SELECT public_key, secret_key FROM payment_settings WHERE provider='paypal'")->fetch();
-                $ch = curl_init('https://api-m.paypal.com/v1/oauth2/token');
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_USERPWD, ($ppConfig['public_key'] ?? '') . ':' . ($ppConfig['secret_key'] ?? ''));
-                curl_setopt($ch, CURLOPT_POSTFIELDS, 'grant_type=client_credentials');
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: application/json','Accept-Language: en_US']);
-                $authRes = curl_exec($ch); $authHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-                if ($authHttp !== 200) { echo json_encode(['error' => 'PayPal auth failed.']); exit; }
-                $auth = json_decode($authRes, true);
-                $ch = curl_init('https://api-m.paypal.com/v2/checkout/orders/' . urlencode($paypalOrderId) . '/capture');
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json','Authorization: Bearer ' . ($auth['access_token'] ?? '')]);
-                $captureRes = curl_exec($ch); $captureHttp = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
-                if ($captureHttp !== 201) { echo json_encode(['error' => 'PayPal capture failed.']); exit; }
-                $capture = json_decode($captureRes, true);
-                $txnId = $capture['purchase_units'][0]['payments']['captures'][0]['id'] ?? '';
-
-                $items = cart_items(); if (empty($items)) { echo json_encode(['error' => 'Cart empty.']); exit; }
-                $subtotal = cart_total();
-                $couponCode = $_SESSION['coupon'] ?? null;
-                $discount = 0.0; $freeShipping = false;
-                if ($couponCode) {
-                    $result = apply_coupon($couponCode, $subtotal);
-                    if ($result['success']) { $discount = (float)$result['discount']; $freeShipping = !empty($result['free_shipping']);
-                        db()->prepare('UPDATE coupons SET used_count = used_count + 1 WHERE code = ?')->execute([$couponCode]);
-                    }
-                }
-                $memberDiscount = $user ? get_member_discount((int)$user['id'], $subtotal) : 0;
-                $discount = max($discount, $memberDiscount);
-                $taxRate = config('app.tax_rate', 8.25);
-                $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
-                $shippingCost = 0.0;
-                $selectedMethod = $_POST['shipping_method'] ?? $_SESSION['checkout_shipping'] ?? null;
-                if ($selectedMethod) {
-                    $stmt = db()->prepare('SELECT * FROM shipping WHERE id = ? AND active = 1');
-                    $stmt->execute([(int)$selectedMethod]); $sRow = $stmt->fetch();
-                    if ($sRow && !$freeShipping) { $itemCount = array_sum(array_column($items, 'quantity')); $shippingCost = (float)$sRow['base_rate'] + ((float)($sRow['per_item_rate'] ?? 0) * $itemCount); }
-                }
-                $total = round($subtotal - $discount + $tax + $shippingCost, 2);
-                $orderNumber = generate_order_number();
-
-                db()->beginTransaction();
-                $stmt = db()->prepare('INSERT INTO orders (user_id, order_number, status, subtotal, discount, tax, shipping, total, notes) VALUES (?,?,?,?,?,?,?,?,?)');
-                $stmt->execute([(int)$user['id'], $orderNumber, 'paid', $subtotal, $discount, $tax, $shippingCost, $total, 'PayPal: ' . $paypalOrderId]);
-                $orderId = (int)db()->lastInsertId();
-                foreach ($items as $item) {
-                    if (!empty($item['is_membership'])) { add_membership_to_cart($item, $orderId, (int)$user['id']); continue; }
-                    $pid = (int)($item['product_id'] ?? 0);
-                    $qty = (int)$item['quantity']; $price = (float)$item['price'];
-                    db()->prepare('INSERT INTO order_items (order_id, product_id, quantity, unit_price, subtotal) VALUES (?,?,?,?,?)')->execute([$orderId, $pid, $qty, $price, $price * $qty]);
-                    db()->prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND track_stock = 1')->execute([$qty, $pid]);
-                }
-                db()->prepare("INSERT INTO payments (order_id, provider, provider_reference, amount, status) VALUES (?, 'paypal', ?, ?, 'completed')")->execute([$orderId, $txnId, $total]);
-                db()->commit();
-                clear_cart();
-                echo json_encode(['success' => true, 'order_number' => $orderNumber]);
-            } catch (\Throwable $e) { if (isset($orderId)) db()->rollBack(); echo json_encode(['error' => $e->getMessage()]); }
-            exit;
-        default:
-            redirect_back();
+            db()->prepare('UPDATE cart SET quantity = ?, size = ?, color = ? WHERE id = ? AND user_id = ?')
+                ->execute([$quantity, $size, $color, (int)$key, (int)$_SESSION['user_id']]);
+        }
+        return;
     }
-}
-
-$user = current_user();
-
-// Email forwards (outside POST switch)
-if ($action === 'admin_get_email_forwards') {
-    header('Content-Type: application/json');
-    if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { echo json_encode([]); exit; }
-    $email = $_GET['email'] ?? '';
-    $forwards = [];
-    if (file_exists('/www/vmail/postfixadmin.db')) {
-        try {
-            $sqldb = new PDO("sqlite:/www/vmail/postfixadmin.db");
-            $stmt = $sqldb->prepare("SELECT id, goto as dest_email FROM alias WHERE address=? AND active=1");
-            $stmt->execute([$email]);
-            $forwards = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (Exception $e) {}
-    }
-    echo json_encode($forwards);
-    exit;
-}
-
-// Backup download (handled outside POST switch)
-if ($action === 'admin_download_backup') {
-    if (!$user || !in_array($user['role'], ['webmaster','super_admin'])) { http_response_code(403); echo 'Access denied'; exit; }
-    $file = basename($_GET['file'] ?? '');
-    $path = dirname(__DIR__) . '/storage/backups/' . $file;
-    if ($file && file_exists($path) && str_starts_with(realpath($path), realpath(dirname(__DIR__) . '/storage/backups'))) {
-        header('Content-Type: application/octet-stream');
-        header('Content-Disposition: attachment; filename="' . $file . '"');
-        header('Content-Length: ' . filesize($path));
-        readfile($path);
+    if ($quantity <= 0) {
+        unset($_SESSION['cart'][$key]);
     } else {
-        http_response_code(404);
-        echo 'Backup not found.';
+        $size = $_POST['size'] ?? null;
+        $color = $_POST['color'] ?? null;
+        $_SESSION['cart'][$key]['quantity'] = $quantity;
+        $_SESSION['cart'][$key]['size'] = $size;
+        $_SESSION['cart'][$key]['color'] = $color;
     }
-    exit;
 }
 
-switch ($page) {
-    case 'home':
-        // Auto-release: move expired coming_soon items to products
-        $expired = db()->query('SELECT * FROM coming_soon WHERE release_date <= NOW()')->fetchAll();
-        foreach ($expired as $item) {
-            $slug = slugify($item['name']) . '-' . time();
-            $sku = 'CS-' . strtoupper(substr(preg_replace('/[^A-Z0-9]/', '', $item['name']), 0, 8)) . time();
-            $images = $item['image'] ? json_encode([$item['image']]) : json_encode(['/assets/img/products/swag.jpg']);
-            db()->prepare('INSERT INTO products (name, sku, slug, description, price, images, status, category_id) VALUES (?, ?, ?, ?, ?, ?, "active", ?)')
-                ->execute([$item['name'], $sku, $slug, $item['description'] ?: '', (float)$item['price'], $images, $item['category_id'] ? (int)$item['category_id'] : null]);
-            $pid = (int)db()->lastInsertId();
-            db()->prepare('INSERT INTO inventory (product_id, stock_quantity) VALUES (?, 25)')->execute([$pid]);
-            db()->prepare('DELETE FROM coming_soon WHERE id = ?')->execute([(int)$item['id']]);
-        }
-        $featured = db()->query('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active" AND p.is_featured = 1 ORDER BY p.created_at DESC LIMIT 6')->fetchAll();
-        $newDrops = db()->query('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active" AND p.is_new = 1 ORDER BY p.created_at DESC LIMIT 4')->fetchAll();
-        $collections = db()->query('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order')->fetchAll();
-        $comingSoon = db()->query('SELECT * FROM coming_soon ORDER BY release_date ASC LIMIT 6')->fetchAll();
-        $hero_class = 'hero-home';
-        $seo_settings = db()->prepare('SELECT * FROM seo_settings WHERE page_key = ?')->execute(['home']) ? db()->query('SELECT * FROM seo_settings WHERE page_key = "home"')->fetch() : null;
-        $seo_title = $seo_settings['meta_title'] ?? null;
-        $seo_description = $seo_settings['meta_description'] ?? null;
-        $hero_content = '<p class="eyebrow">Futuristic Streetwear</p><h1>Be Different.<br>Be You.</h1><p>Premium cyberwear apparel for creators, trendsetters, and the next generation.</p><div class="actions"><a class="button primary" href="/?page=shop">Shop Now</a><a class="button" href="/?page=collections">Explore Collections</a></div>';
-        $content = render_home($featured, $newDrops, $collections, $comingSoon);
-        break;
+function apply_coupon(string $code, float $subtotal): array
+{
+    $stmt = db()->prepare('SELECT * FROM coupons WHERE code = ? AND active = 1 AND (max_uses IS NULL OR used_count < max_uses) AND (starts_at IS NULL OR starts_at <= NOW()) AND (ends_at IS NULL OR ends_at >= NOW())');
+    $stmt->execute([strtoupper($code)]);
+    $coupon = $stmt->fetch();
+    if (!$coupon) {
+        return ['success' => false, 'message' => 'Invalid or expired coupon code.'];
+    }
 
-    case 'shop':
-        $categorySlug = $_GET['category'] ?? null;
-        $sort = $_GET['sort'] ?? 'newest';
-        $search = trim($_GET['search'] ?? '');
-        $page = max(1, (int)($_GET['p'] ?? 1));
-        $perPage = 12;
-        $offset = ($page - 1) * $perPage;
+    $discount = $coupon['discount_type'] === 'percent'
+        ? round($subtotal * ($coupon['discount_value'] / 100), 2)
+        : min($coupon['discount_value'], $subtotal);
 
-        // Count total
-        $countSql = 'SELECT COUNT(*) FROM products p WHERE p.status = "active"';
-        $countParams = [];
-        if ($categorySlug) { $countSql .= ' AND p.category_id = (SELECT id FROM categories WHERE slug = ?)'; $countParams[] = $categorySlug; }
-        if ($search) { $countSql .= ' AND (p.name LIKE ? OR p.description LIKE ?)'; $countParams[] = "%{$search}%"; $countParams[] = "%{$search}%"; }
-        $totalProducts = (int)db()->prepare($countSql)->execute($countParams) ? db()->query('SELECT FOUND_ROWS()')->fetchColumn() : 0;
-        $stmt2 = db()->prepare($countSql); $stmt2->execute($countParams);
-        $totalProducts = (int)$stmt2->fetchColumn();
-        $totalPages = max(1, (int)ceil($totalProducts / $perPage));
-
-        $sql = 'SELECT p.*, i.stock_quantity, c.name as category_name FROM products p LEFT JOIN inventory i ON i.product_id = p.id LEFT JOIN categories c ON c.id = p.category_id WHERE p.status = "active"';
-        $params = [];
-        if ($categorySlug) { $sql .= ' AND p.category_id = (SELECT id FROM categories WHERE slug = ?)'; $params[] = $categorySlug; }
-        if ($search) { $sql .= ' AND (p.name LIKE ? OR p.description LIKE ?)'; $params[] = "%{$search}%"; $params[] = "%{$search}%"; }
-        $sql .= match($sort) {
-            'price-low' => ' ORDER BY COALESCE(p.sale_price, p.price) ASC',
-            'price-high' => ' ORDER BY COALESCE(p.sale_price, p.price) DESC',
-            'name' => ' ORDER BY p.name ASC',
-            default => ' ORDER BY p.created_at DESC',
-        };
-        $sql .= " LIMIT $perPage OFFSET $offset";
-        $stmt = db()->prepare($sql);
-        $stmt->execute($params);
-        $allProducts = $stmt->fetchAll();
-        $categories = db()->query('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order')->fetchAll();
-        $seo_settings = db()->query('SELECT * FROM seo_settings WHERE page_key = "shop"')->fetch();
-        $seo_title = $seo_settings['meta_title'] ?? null;
-        $seo_description = $seo_settings['meta_description'] ?? null;
-        $hero_class = 'hero-shop';
-
-        // Fetch membership plans for Sugga Gang category
-        $membershipPlans = [];
-        if ($categorySlug === 'sugga-gang-member') {
-            $membershipPlans = db()->query('SELECT * FROM membership_plans WHERE is_active=1 ORDER BY price')->fetchAll();
-            $hero_content = '<p class="eyebrow">Sugga Gang</p><h1>🔥 Join the Sugga Gang</h1><p>Get early access, exclusive gear, and monthly perks.</p>';
-        } else {
-            $hero_content = '<p class="eyebrow">The Collection</p><h1>Shop All</h1><p>Explore the latest drops and classic essentials.</p>';
-        }
-
-        $content = render_shop($allProducts, $categories, $categorySlug, $sort, $search, $page, $totalPages, $membershipPlans);
-        break;
-
-    case 'product':
-        $slug = $_GET['slug'] ?? '';
-        $stmt = db()->prepare('SELECT p.*, i.stock_quantity, c.name as category_name, c.slug as category_slug FROM products p LEFT JOIN inventory i ON i.product_id = p.id LEFT JOIN categories c ON c.id = p.category_id WHERE p.slug = ? AND p.status = "active"');
-        $stmt->execute([$slug]);
-        $product = $stmt->fetch();
-        if (!$product) abort(404, 'Product not found');
-        $images = json_decode($product['images'] ?? '[]', true);
-        $sizes = json_decode($product['sizes'] ?? '[]', true);
-        $colors = json_decode($product['colors'] ?? '[]', true);
-        $reviews = db()->prepare('SELECT r.*, u.full_name, u.avatar FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.product_id = ? AND r.is_approved = 1 ORDER BY r.created_at DESC')->execute([(int)$product['id']]) ? db()->query('SELECT r.*, u.full_name, u.avatar FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.product_id = 0')->fetchAll() : [];
-        $related = db()->prepare('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.category_id = ? AND p.id != ? AND p.status = "active" LIMIT 4');
-        $related->execute([(int)$product['category_id'], (int)$product['id']]);
-        $relatedProducts = $related->fetchAll();
-        $seo_title = $product['meta_title'] ?: $product['name'] . ' — SUGGAWAYZ';
-        $seo_description = $product['meta_description'] ?: $product['seo_description'];
-        $hero_class = 'hero-product';
-        $content = render_product_detail($product, $images, $sizes, $colors, $reviews, $relatedProducts, $user);
-        break;
-
-    case 'collections':
-        $collections = db()->query('SELECT c.*, (SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.status = "active") as product_count FROM categories c WHERE c.active = 1 ORDER BY c.sort_order')->fetchAll();
-        $seo_settings = db()->query('SELECT * FROM seo_settings WHERE page_key = "collections"')->fetch();
-        $seo_title = $seo_settings['meta_title'] ?? null;
-        $seo_description = $seo_settings['meta_description'] ?? null;
-        $hero_content = '<p class="eyebrow">Explore</p><h1>Collections</h1><p>Browse by category and find your fit.</p>';
-        $content = render_collections($collections);
-        break;
-
-    case 'new-drops':
-        $newProducts = db()->query('SELECT p.*, i.stock_quantity FROM products p LEFT JOIN inventory i ON i.product_id = p.id WHERE p.status = "active" AND p.is_new = 1 ORDER BY p.created_at DESC')->fetchAll();
-        $hero_content = '<p class="eyebrow">Fresh Arrivals</p><h1>New Drops</h1><p>Limited edition pieces and the latest releases.</p>';
-        $content = render_new_drops($newProducts);
-        break;
-
-    case 'lookbook':
-        if (!$user) { $seo_title = 'Events'; $hero_class = 'hero-sub'; }
-        $content = render_events();
-        break;
-
-    case 'about':
-        $page = db()->query("SELECT * FROM pages WHERE slug = 'about' AND published = 1")->fetch();
-        $seo_title = 'About — SUGGAWAYZ';
-        $hero_content = '<p class="eyebrow">Our Story</p><h1>About</h1>';
-        $content = render_about($page);
-        break;
-
-    case 'contact':
-        $hero_content = '<p class="eyebrow">Get in Touch</p><h1>Contact</h1><p>Questions, collaborations, or just saying hi.</p>';
-        $content = render_contact();
-        break;
-
-    case 'faq':
-        $faqs = db()->query('SELECT * FROM faq_items WHERE published = 1 ORDER BY sort_order')->fetchAll();
-        $categories = db()->query('SELECT DISTINCT category FROM faq_items WHERE published = 1 AND category IS NOT NULL')->fetchAll(PDO::FETCH_COLUMN);
-        $hero_content = '<p class="eyebrow">Help Center</p><h1>FAQ</h1>';
-        $content = render_faq($faqs, $categories);
-        break;
-
-    case 'blog':
-        $posts = db()->query('SELECT * FROM blog_posts WHERE published = 1 ORDER BY published_at DESC')->fetchAll();
-        $hero_content = '<p class="eyebrow">Read</p><h1>Blog</h1>';
-        $content = render_blog($posts);
-        break;
-
-    case 'blog-post':
-        $slug = $_GET['slug'] ?? '';
-        $stmt = db()->prepare('SELECT * FROM blog_posts WHERE slug = ? AND published = 1');
-        $stmt->execute([$slug]);
-        $post = $stmt->fetch();
-        if (!$post) abort(404);
-        $seo_title = $post['title'] . ' — SUGGAWAYZ Blog';
-        $content = render_blog_post($post);
-        break;
-
-    case 'terms':
-        $page = db()->query("SELECT * FROM pages WHERE slug = 'terms' AND published = 1")->fetch();
-        $hero_content = '<p class="eyebrow">Legal</p><h1>Terms & Conditions</h1>';
-        $content = render_static_page($page);
-        break;
-
-case 'privacy':
-    $page = db()->query("SELECT * FROM pages WHERE slug = 'privacy' AND published = 1")->fetch();
-    $hero_content = '<p class="eyebrow">Legal</p><h1>Privacy Policy</h1>';
-    $content = render_static_page($page);
-    break;
-
-case 'returns':
-    $page = db()->query("SELECT * FROM pages WHERE slug = 'returns' AND published = 1")->fetch();
-    $hero_content = '<p class="eyebrow">Customer Care</p><h1>Returns & Exchanges</h1>';
-    $content = render_static_page($page);
-    break;
-
-    case 'size-guide':
-        $page = db()->query("SELECT * FROM pages WHERE slug = 'size-guide' AND published = 1")->fetch();
-        $sizeCharts = db()->query("SELECT * FROM size_charts WHERE is_active=1 ORDER BY name")->fetchAll();
-        $content = render_size_guide($page, $sizeCharts);
-        $seo_title = 'Size Guide';
-        $hero_class = 'hero-sub';
-        break;
-
-case 'shipping':
-    $methods = db()->query('SELECT * FROM shipping WHERE active = 1 ORDER BY region, carrier')->fetchAll();
-    $hero_content = '<p class="eyebrow">Customer Care</p><h1>Shipping Information</h1>';
-    ob_start(); ?>
-    <div class="panel">
-      <?php
-      $regions = [];
-      foreach ($methods as $m) {
-          $regions[$m['region']][] = $m;
-      }
-      foreach ($regions as $region => $items): ?>
-        <h3><?= e($region) ?></h3>
-        <table class="table">
-          <tr><th>Carrier</th><th>Service</th><th>Rate</th><th>Free Over</th><th>Est. Delivery</th></tr>
-          <?php foreach ($items as $m): ?>
-            <tr>
-              <td><?= e($m['carrier']) ?></td>
-              <td><?= e($m['service_name']) ?></td>
-              <td>$<?= e(number_format((float)$m['base_rate'], 2)) ?></td>
-              <td><?= $m['free_threshold'] ? '$' . e(number_format((float)$m['free_threshold'], 2)) : '—' ?></td>
-              <td><?= $m['estimated_days_min'] && $m['estimated_days_max'] ? e($m['estimated_days_min'] . '-' . $m['estimated_days_max'] . ' days') : '—' ?></td>
-            </tr>
-          <?php endforeach; ?>
-        </table>
-      <?php endforeach; ?>
-    </div>
-    <?php $content = ob_get_clean();
-    break;
-
-    case 'login':
-        if ($user) redirect('/?page=account');
-        $hero_content = '<p class="eyebrow">Secure Access</p><h1>Login</h1>';
-        $content = render_login();
-        break;
-
-    case 'register':
-        if ($user) redirect('/?page=account');
-        $hero_content = '<p class="eyebrow">Join</p><h1>Register</h1>';
-        $content = render_register();
-        break;
-
-    case 'coupons':
-        $coupons = db()->query("SELECT code, discount_type, discount_value, min_order_amount, starts_at, ends_at FROM coupons WHERE active=1 AND (starts_at IS NULL OR starts_at <= NOW()) AND (ends_at IS NULL OR ends_at >= NOW()) ORDER BY discount_value DESC")->fetchAll();
-        $hero_content = '<p class="eyebrow">Save Money</p><h1>🏷️ Coupons & Discounts</h1>';
-        $content = render_coupons_page($coupons);
-        break;
-
-    case 'forgot-password':
-        $hero_content = '<p class="eyebrow">Recovery</p><h1>Reset Password</h1>';
-        $content = render_forgot_password();
-        break;
-
-    case 'cart':
-        $items = cart_items();
-        $subtotal = cart_total();
-        $couponCode = $_SESSION['coupon'] ?? null;
-        $discount = 0.0;
-        if ($couponCode) {
-            $result = apply_coupon($couponCode, $subtotal);
-            if ($result['success']) $discount = (float)$result['discount'];
-            else { unset($_SESSION['coupon']); $couponCode = null; }
-        }
-        // Member discount
-        $memberDiscount = 0;
-        if ($user) {
-            $memberDiscount = get_member_discount((int)$user['id'], $subtotal);
-            $discount = max($discount, $memberDiscount);
-        }
-        $shippingMethods = db()->query('SELECT * FROM shipping WHERE region = "United States" AND active = 1')->fetchAll();
-        $hero_content = '<p class="eyebrow">Your Cart</p><h1>Shopping Cart</h1>';
-        $content = render_cart($items, $subtotal, $discount, $couponCode, $shippingMethods, $user ? (bool)db()->prepare("SELECT id FROM user_memberships WHERE user_id=? AND status='active'")->execute([(int)$user['id']]) && db()->query("SELECT id FROM user_memberships WHERE user_id=".(int)$user['id']." AND status='active'")->fetch() : false);
-        break;
-
-    case 'checkout':
-        if (!$user) { session_flash('error', 'Please log in to checkout.'); redirect('/?page=login'); }
-        $items = cart_items();
-        if (empty($items)) { session_flash('error', 'Your cart is empty.'); redirect('/?page=cart'); }
-        $addresses = db()->prepare('SELECT * FROM addresses WHERE user_id = ?')->execute([(int)$user['id']]) ? db()->query('SELECT * FROM addresses WHERE user_id = ' . (int)$user['id'])->fetchAll() : [];
-        $subtotal = cart_total();
-        $couponCode = $_SESSION['coupon'] ?? null;
-        $discount = 0.0;
-        if ($couponCode) {
-            $result = apply_coupon($couponCode, $subtotal);
-            if ($result['success']) $discount = (float)$result['discount'];
-        }
-        $taxRate = config('app.tax_rate', 8.25);
-        $tax = round(($subtotal - $discount) * ($taxRate / 100), 2);
-        $shippingMethods = db()->query('SELECT * FROM shipping WHERE region = "United States" AND active = 1')->fetchAll();
-        $shippingCost = 0;
-        if (!empty($shippingMethods)) {
-            $first = $shippingMethods[0];
-            $itemCount = array_sum(array_column($items, 'quantity'));
-            $shippingCost = (float)$first['base_rate'] + ((float)($first['per_item_rate'] ?? 0) * $itemCount);
-        }
-        // Check if coupon grants free shipping
-        if ($couponCode) {
-            $result = apply_coupon($couponCode, $subtotal);
-            if (!empty($result['free_shipping'])) $shippingCost = 0;
-        }
-        $hero_content = '<p class="eyebrow">Checkout</p><h1>Complete Your Order</h1>';
-        $content = render_checkout($items, $addresses, $subtotal, $discount, $tax, $shippingMethods, $user, $shippingCost);
-        break;
-
-    case 'order-confirmed':
-        $orderNumber = $_GET['order'] ?? '';
-        $stmt = db()->prepare('SELECT o.*, (SELECT provider FROM payments WHERE order_id = o.id LIMIT 1) as payment_method FROM orders o WHERE o.order_number = ?');
-        $stmt->execute([$orderNumber]);
-        $order = $stmt->fetch();
-        if (!$order) abort(404);
-        $orderItems = db()->prepare('SELECT * FROM order_items WHERE order_id = ?')->execute([(int)$order['id']]) ? db()->query('SELECT * FROM order_items WHERE order_id = ' . (int)$order['id'])->fetchAll() : [];
-        $hero_content = '<p class="eyebrow">Success</p><h1>Order Confirmed</h1>';
-        $content = render_order_confirmed($order, $orderItems);
-        break;
-
-     case 'account':
-        if (!$user) { session_flash('error', 'Please log in.'); redirect('/?page=login'); }
-        $tab = $_GET['tab'] ?? 'dashboard';
-        $orders = db()->prepare('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC')->execute([(int)$user['id']]) ? db()->query('SELECT * FROM orders WHERE user_id = ' . (int)$user['id'] . ' ORDER BY created_at DESC')->fetchAll() : [];
-        $addresses = db()->prepare('SELECT * FROM addresses WHERE user_id = ? ORDER BY is_default_shipping DESC')->execute([(int)$user['id']]) ? db()->query('SELECT * FROM addresses WHERE user_id = ' . (int)$user['id'] . ' ORDER BY is_default_shipping DESC')->fetchAll() : [];
-        $wishlist = db()->prepare('SELECT w.*, p.name, p.price, p.sale_price, p.slug, p.images FROM wishlist_items w JOIN products p ON p.id = w.product_id WHERE w.user_id = ?')->execute([(int)$user['id']]) ? db()->query('SELECT w.*, p.name, p.price, p.sale_price, p.slug, p.images FROM wishlist_items w JOIN products p ON p.id = w.product_id WHERE w.user_id = ' . (int)$user['id'])->fetchAll() : [];
-        $devices = db()->prepare('SELECT * FROM device_tracking WHERE user_id = ? ORDER BY last_seen_at DESC LIMIT 10')->execute([(int)$user['id']]) ? db()->query('SELECT * FROM device_tracking WHERE user_id = ' . (int)$user['id'] . ' ORDER BY last_seen_at DESC LIMIT 10')->fetchAll() : [];
-        $notifications = db()->prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20')->execute([(int)$user['id']]) ? db()->query('SELECT * FROM notifications WHERE user_id = ' . (int)$user['id'] . ' ORDER BY created_at DESC LIMIT 20')->fetchAll() : [];
-        $recentOrders = array_slice($orders, 0, 5);
-        // Get membership info
-        $membership = db()->prepare("SELECT m.*, p.name as plan_name, p.price, p.benefits FROM user_memberships m JOIN membership_plans p ON p.id=m.plan_id WHERE m.user_id=? AND m.status='active' LIMIT 1");
-        $membership->execute([(int)$user['id']]);
-        $userMembership = $membership->fetch() ?: null;
-        // Auto-renewal check: if membership expired, generate new invoice
-        if ($userMembership && $userMembership['end_date'] && strtotime($userMembership['end_date']) < time()) {
-            $invNum = 'INV-MEM-' . time() . '-' . $user['id'];
-            db()->prepare("INSERT INTO membership_invoices (user_id, invoice_number, amount, status, due_date) VALUES (?,?,?,'pending',DATE_ADD(NOW(), INTERVAL 7 DAY))")
-                ->execute([(int)$user['id'], $invNum, (float)$userMembership['price']]);
-            db()->prepare("UPDATE user_memberships SET start_date=NOW(), end_date=DATE_ADD(NOW(), INTERVAL 1 MONTH) WHERE id=?")->execute([(int)$userMembership['id']]);
-        }
-        $content = render_account_dashboard($user, $tab, $recentOrders, $orders, $addresses, $wishlist, $devices, $notifications, $userMembership);
-        break;
-
-    case 'admin':
-        if (!$user || !is_admin($user)) { session_flash('error', 'Access denied.'); redirect('/?page=login'); }
-        $tab = $_GET['tab'] ?? 'dashboard';
-        $stats = db()->query('SELECT (SELECT COUNT(*) FROM products) as products, (SELECT COUNT(*) FROM users WHERE role = "customer" AND is_deleted=0) as customers, (SELECT COUNT(*) FROM orders) as orders, (SELECT COUNT(*) FROM orders WHERE status = "pending") as pending_orders, (SELECT COUNT(*) FROM inventory WHERE stock_quantity <= low_stock_threshold) as low_stock, (SELECT COUNT(*) FROM payments WHERE status = "failed") as failed_payments, (SELECT COALESCE(SUM(total), 0) FROM orders WHERE status NOT IN ("cancelled", "refunded")) as revenue')->fetch();
-        $allProducts = db()->query('SELECT p.*, (SELECT stock_quantity FROM inventory WHERE product_id = p.id LIMIT 1) as stock_quantity, (SELECT low_stock_threshold FROM inventory WHERE product_id = p.id LIMIT 1) as low_stock_threshold FROM products p ORDER BY p.created_at DESC')->fetchAll();
-        $orderSearch = trim($_GET['order_search'] ?? '');
-        $orderBy = $_GET['order_by'] ?? 'created_at';
-        $orderDir = $_GET['order_dir'] ?? 'DESC';
-        $orderSql = 'SELECT o.*, u.full_name, u.email as customer_email FROM orders o LEFT JOIN users u ON u.id = o.user_id';
-        $orderParams = [];
-        if ($orderSearch) {
-            $orderSql .= ' WHERE (o.order_number LIKE ? OR u.full_name LIKE ? OR u.email LIKE ? OR u.username LIKE ? OR o.id = ? OR o.id IN (SELECT order_id FROM payments WHERE provider_reference LIKE ?))';
-            $s = "%{$orderSearch}%";
-            $orderParams = [$s, $s, $s, $s, is_numeric($orderSearch) ? (int)$orderSearch : 0, $s];
-        }
-        $allowedOrderBy = ['created_at', 'total', 'status', 'order_number'];
-        if (!in_array($orderBy, $allowedOrderBy)) $orderBy = 'created_at';
-        if (!in_array(strtoupper($orderDir), ['ASC', 'DESC'])) $orderDir = 'DESC';
-        $orderSql .= " ORDER BY o.{$orderBy} {$orderDir} LIMIT 100";
-        $allOrders = db()->prepare($orderSql)->execute($orderParams) ? db()->query($orderSql)->fetchAll() : [];
-        $allCustomers = db()->query('SELECT u.*, (SELECT COUNT(*) FROM orders WHERE user_id = u.id) as total_orders FROM users u WHERE u.is_employee=0 AND u.is_deleted=0 ORDER BY u.created_at DESC LIMIT 100')->fetchAll();
-        $allEmployees = db()->query('SELECT u.*, a.permission_level FROM users u LEFT JOIN admins a ON a.user_id = u.id WHERE u.is_employee=1 ORDER BY u.created_at DESC')->fetchAll();
-        $categories = db()->query('SELECT * FROM categories ORDER BY sort_order')->fetchAll();
-        $inventory = db()->query('SELECT i.*, p.name as product_name, p.sku as product_sku, l.name as location_name FROM inventory i JOIN products p ON p.id = i.product_id LEFT JOIN inventory_locations l ON l.id = i.location_id ORDER BY i.stock_quantity ASC')->fetchAll();
-        $locations = db()->query('SELECT * FROM inventory_locations WHERE active = 1')->fetchAll();
-        $reorderItems = db()->query('SELECT r.*, p.name as product_name, p.sku as product_sku, l.name as location_name, u.full_name as requester_name FROM reorder_requests r JOIN products p ON p.id = r.product_id LEFT JOIN inventory_locations l ON l.id = r.location_id LEFT JOIN users u ON u.id = r.requested_by ORDER BY r.created_at DESC')->fetchAll();
-        $lowStockProducts = db()->query('SELECT p.id, p.name, p.sku, i.stock_quantity, i.reorder_level, i.low_stock_threshold FROM products p JOIN inventory i ON i.product_id = p.id WHERE i.stock_quantity <= i.reorder_level ORDER BY i.stock_quantity ASC')->fetchAll();
-        $paymentSettings = db()->query('SELECT * FROM payment_settings ORDER BY provider')->fetchAll();
-        $coupons = db()->query('SELECT * FROM coupons ORDER BY created_at DESC')->fetchAll();
-        $auditDateFrom = $_GET['date_from'] ?? date('Y-m-d', strtotime('-7 days'));
-        $auditDateTo = $_GET['date_to'] ?? date('Y-m-d');
-        $auditStmt = db()->prepare('SELECT a.*, u.username FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id WHERE DATE(a.created_at) BETWEEN ? AND ? ORDER BY a.created_at DESC LIMIT 200');
-        $auditStmt->execute([$auditDateFrom, $auditDateTo]);
-        $auditLogs = $auditStmt->fetchAll();
-        $signInLogs = db()->query('SELECT * FROM sign_in_log ORDER BY created_at DESC LIMIT 200')->fetchAll();
-        $posSessions = db()->query('SELECT ps.*, u.full_name as employee_name FROM pos_sessions ps JOIN users u ON u.id = ps.employee_id ORDER BY ps.opened_at DESC LIMIT 50')->fetchAll();
-        $openPosSession = db()->query('SELECT * FROM pos_sessions WHERE employee_id = ' . (int)$user['id'] . ' AND status = "open" ORDER BY id DESC')->fetch() ?: null;
-        $posTransactions = [];
-        if ($openPosSession) {
-            $posTransactions = db()->query('SELECT * FROM pos_transactions WHERE pos_session_id = ' . (int)$openPosSession['id'] . ' ORDER BY created_at ASC')->fetchAll();
-        }
-        $todos = db()->query('SELECT * FROM todos ORDER BY sort_order ASC, created_at DESC')->fetchAll();
-        $content = render_admin_dashboard($user, $tab, $stats, $allProducts, $allOrders, $allCustomers, $categories, $allEmployees, $inventory, $locations, $reorderItems, $lowStockProducts, $paymentSettings, $coupons, $auditLogs, $signInLogs, $posSessions, $openPosSession, $posTransactions, $orderSearch, $todos);
-        break;
-
-    case 'membership':
-        $plans = db()->query('SELECT * FROM membership_plans WHERE is_active=1 ORDER BY sort_order')->fetchAll();
-        $userMembership = null;
-        if ($user) {
-            $stmt = db()->prepare("SELECT m.*, p.name as plan_name FROM user_memberships m JOIN membership_plans p ON p.id=m.plan_id WHERE m.user_id=? AND m.status='active' LIMIT 1");
-            $stmt->execute([(int)$user['id']]);
-            $userMembership = $stmt->fetch() ?: null;
-        }
-        $seo_title = 'Membership';
-        $hero_class = 'hero-sub';
-        $content = render_membership_page($plans, $userMembership);
-        break;
-
-    case 'webmaster':
-        $seo_title = 'Webmaster';
-        $hero_class = 'hero-sub';
-        $seo_description = 'Meet the SUGGAWAYZ Webmaster.';
-        $webmaster = db()->query("SELECT id, username, full_name, email, avatar, bio FROM users WHERE role='webmaster' AND is_deleted=0 LIMIT 1")->fetch();
-        $content = render_webmaster_page($webmaster);
-        break;
-
-    case 'bug-report':
-        $seo_title = 'Report a Bug';
-        $hero_class = 'hero-sub';
-        $content = render_bug_report_form();
-        break;
-
-    case 'receipt':
-        if (!$user) { abort(403); }
-        $tid = (int)($_GET['transaction_id'] ?? 0);
-        $stmt = db()->prepare('SELECT t.*, s.employee_id FROM pos_transactions t JOIN pos_sessions s ON s.id = t.pos_session_id WHERE t.id = ?');
-        $stmt->execute([$tid]);
-        $transaction = $stmt->fetch();
-        if (!$transaction) { abort(404); }
-        if (!is_admin($user) && (int)$transaction['employee_id'] !== (int)$user['id']) { abort(403); }
-
-        $order = [];
-        $orderItems = [];
-        if ($transaction['order_id']) {
-            $o = db()->prepare('SELECT * FROM orders WHERE id = ?');
-            $o->execute([(int)$transaction['order_id']]);
-            $order = $o->fetch() ?: [];
-            if ($order) {
-                $oi = db()->prepare('SELECT * FROM order_items WHERE order_id = ?');
-                $oi->execute([(int)$order['id']]);
-                $orderItems = $oi->fetchAll();
-            }
-        }
-
-        $receiptHtml = render_receipt($transaction, $order, $orderItems);
-        echo $receiptHtml;
-        exit;
-
-    case 'pos-end-of-day':
-        if (!$user) { abort(403); }
-        $sid = (int)($_GET['session_id'] ?? 0);
-        $session = db()->prepare('SELECT * FROM pos_sessions WHERE id = ?');
-        $session->execute([$sid]);
-        $s = $session->fetch();
-        if (!$s) { abort(404); }
-        $employee = db()->prepare('SELECT * FROM users WHERE id = ?');
-        $employee->execute([(int)$s['employee_id']]);
-        $emp = $employee->fetch();
-        if (!$emp) { abort(404); }
-        $txns = db()->prepare('SELECT * FROM pos_transactions WHERE pos_session_id = ? ORDER BY created_at ASC');
-        $txns->execute([$sid]);
-        $transactions = $txns->fetchAll();
-        echo render_pos_end_of_day($s, $transactions, $emp);
-        exit;
-
-    case 'logout':
-        logout_user();
-        session_flash('notice', 'You have been logged out.');
-        redirect('/');
-
-    default:
-        abort(404);
+    return [
+        'success' => true,
+        'coupon' => $coupon,
+        'discount' => $discount,
+        'apply_to_total' => !empty($coupon['apply_to_total']),
+        'free_shipping' => !empty($coupon['free_shipping']),
+        'waive_taxes' => !empty($coupon['waive_taxes']),
+    ];
 }
 
-require dirname(__DIR__) . '/app/Views/layouts/main.php';
+function validate_uploaded_image(array $file): ?string
+{
+    if (empty($file['tmp_name']) || $file['error'] !== UPLOAD_ERR_OK) return null;
+    $allowedExts = ['jpg','jpeg','png','gif','webp'];
+    $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, $allowedExts)) return null;
+    // Verify MIME type if fileinfo is available
+    if (function_exists('finfo_open')) {
+        $allowedMimes = ['image/jpeg','image/png','image/gif','image/webp'];
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = finfo_file($finfo, $file['tmp_name']);
+        finfo_close($finfo);
+        if (!in_array($mime, $allowedMimes)) return null;
+    }
+    if ($file['size'] > 5 * 1024 * 1024) return null;
+    return $ext;
+}
+
+function send_email(string $to, string $subject, string $body): bool
+{
+    $host = site_setting('email_smtp_host', '');
+    // Use local mail() for local delivery
+    if ($host && $host !== 'localhost') {
+        return send_email_smtp($to, $subject, $body);
+    }
+
+    $fromEmail = site_setting('email_from_address', 'noreply@suggawayz.com');
+    $fromName = site_setting('email_from_name', 'SUGGAWAYZ');
+    $mid = time() . '.' . bin2hex(random_bytes(8)) . '@suggawayz.com';
+
+    $headers = "From: {$fromName} <{$fromEmail}>\r\n";
+    $headers .= "Reply-To: {$fromEmail}\r\n";
+    $headers .= "Return-Path: {$fromEmail}\r\n";
+    $headers .= "Message-ID: <{$mid}>\r\n";
+    $headers .= "MIME-Version: 1.0\r\n";
+    $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+    $headers .= "X-Mailer: SUGGAWAYZ Mailer/1.0\r\n";
+    $headers .= "X-Priority: 3 (Normal)\r\n";
+    $headers .= "List-Unsubscribe: <mailto:{$fromEmail}?subject=unsubscribe>\r\n";
+
+    // Additional headers for better deliverability
+    $headers .= "Precedence: bulk\r\n";
+    $headers .= "Auto-Submitted: auto-generated\r\n";
+
+    return mail($to, $subject, $body, $headers, "-f {$fromEmail}");
+}
+
+function send_email_smtp(string $to, string $subject, string $body): bool
+{
+    $host = site_setting('email_smtp_host', '');
+    $port = (int)site_setting('email_smtp_port', '587');
+    $user = site_setting('email_smtp_username', '');
+    $passEnc = site_setting('email_smtp_password', '');
+    $pass = decrypt_value($passEnc) ?: $passEnc;
+    $enc = site_setting('email_smtp_encryption', 'tls');
+    $from = site_setting('email_from_address', $user ?: 'noreply@suggawayz.com');
+    $fromName = site_setting('email_from_name', 'SUGGAWAYZ');
+
+    if (!$host || !$user || !$pass) return false;
+
+    $prefix = ($enc === 'ssl') ? 'ssl://' : '';
+    $errno = 0; $errstr = '';
+    $fp = @fsockopen($prefix . $host, $port, $errno, $errstr, 15);
+    if (!$fp) return false;
+
+    $response = '';
+    $smtp_ok = function($fp, $expected = 250) use (&$response) {
+        $response = fgets($fp, 512);
+        return (int)substr($response, 0, 3) === $expected;
+    };
+
+    fread($fp, 512); // server banner
+    fwrite($fp, "EHLO suggawayz.com\r\n"); fflush($fp); $smtp_ok($fp);
+
+    if ($enc === 'tls') {
+        fwrite($fp, "STARTTLS\r\n"); fflush($fp);
+        if (!$smtp_ok($fp, 220)) { fclose($fp); return false; }
+        @stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+        fwrite($fp, "EHLO suggawayz.com\r\n"); fflush($fp); $smtp_ok($fp);
+    }
+
+    fwrite($fp, "AUTH LOGIN\r\n"); fflush($fp); $smtp_ok($fp, 334);
+    fwrite($fp, base64_encode($user) . "\r\n"); fflush($fp); $smtp_ok($fp, 334);
+    fwrite($fp, base64_encode($pass) . "\r\n"); fflush($fp); $smtp_ok($fp, 235);
+
+    fwrite($fp, "MAIL FROM:<{$from}>\r\n"); fflush($fp); $smtp_ok($fp);
+    fwrite($fp, "RCPT TO:<{$to}>\r\n"); fflush($fp); $smtp_ok($fp);
+    fwrite($fp, "DATA\r\n"); fflush($fp); $smtp_ok($fp, 354);
+
+    $mid = time() . '.' . bin2hex(random_bytes(8)) . '@suggawayz.com';
+    $headers = "From: {$fromName} <{$from}>\r\nReply-To: {$from}\r\nReturn-Path: {$from}\r\nMessage-ID: <{$mid}>\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\nX-Mailer: SUGGAWAYZ Mailer/1.0\r\nList-Unsubscribe: <mailto:{$from}?subject=unsubscribe>\r\nPrecedence: bulk\r\nAuto-Submitted: auto-generated\r\n";
+    fwrite($fp, "Subject: {$subject}\r\n{$headers}\r\n{$body}\r\n.\r\n"); fflush($fp);
+    $result = $smtp_ok($fp);
+
+    fwrite($fp, "QUIT\r\n"); fflush($fp);
+    fclose($fp);
+    return $result;
+}
+
+function imap_cmd(string $host, int $port, string $user, string $pass, string $command): array
+{
+    $errno = 0; $errstr = '';
+    $prefix = ($port == 993) ? 'ssl://' : '';
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+    $fp = @stream_socket_client($prefix . $host . ':' . $port, $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) return ['error' => "Connection failed: $errstr"];
+    stream_set_timeout($fp, 30);
+    $greeting = fread($fp, 8192);
+    $tag = 1;
+    $resp = '';
+
+    $doCmd = function($c) use ($fp, &$tag) { fwrite($fp, "A$tag $c\r\n"); fflush($fp); $tag++; };
+    $doCmd("LOGIN $user $pass");
+    do { $chunk = @fread($fp, 65536); if ($chunk === false || $chunk === '') break; $resp .= $chunk; } while (!preg_match('/^A\d+ (OK|NO|BAD|BYE).*/m', $resp));
+    if (!preg_match('/^A\d+ OK/m', $resp)) { fclose($fp); return ['error' => 'Login failed']; }
+
+    $resp = '';
+    $doCmd($command);
+    do { $chunk = @fread($fp, 65536); if ($chunk === false || $chunk === '') break; $resp .= $chunk; } while (!preg_match('/^A\d+ (OK|NO|BAD|BYE)/m', $resp));
+    fclose($fp);
+    return ['resp' => $resp];
+}
+
+function imap_fetch_msg(string $host, int $port, string $user, string $pass, string $mailbox, int $msgUid): array
+{
+    $errno = 0; $errstr = '';
+    $prefix = ($port == 993) ? 'ssl://' : '';
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+    $fp = @stream_socket_client($prefix . $host . ':' . $port, $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) return ['error' => "Connection failed: $errstr"];
+    stream_set_timeout($fp, 30);
+    fread($fp, 8192);
+    $tag = 1;
+    $resp = '';
+    $c = function($cmd) use ($fp, &$tag) { fwrite($fp, "A$tag $cmd\r\n"); fflush($fp); $tag++; };
+    $r = function() use ($fp) {
+        $out = '';
+        while ($chunk = @fread($fp, 65536)) {
+            $out .= $chunk;
+            if (preg_match('/^A\d+ (OK|NO|BAD|BYE)/m', $out)) break;
+        }
+        return $out;
+    };
+    $c("LOGIN $user $pass"); $r();
+    $c("SELECT \"$mailbox\""); $r();
+    // Fetch the text/plain part if multipart, otherwise fetch body
+    $c("FETCH $msgUid (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)] BODY.PEEK[1] BODY.PEEK[TEXT])");
+    $resp = $r();
+    fclose($fp);
+    return ['resp' => $resp];
+}
+
+function imap_delete_msg(string $host, int $port, string $user, string $pass, string $mailbox, int $msgSeq): bool
+{
+    $prefix = ($port == 993) ? 'ssl://' : '';
+    $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+    $fp = @stream_socket_client($prefix . $host . ':' . $port, $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) return false;
+    stream_set_timeout($fp, 10);
+    fread($fp, 8192);
+    $tag = 1;
+    $c = function($cmd) use ($fp, &$tag) { fwrite($fp, "A$tag $cmd\r\n"); fflush($fp); $tag++; };
+    $r = function() use ($fp) { $o = ''; while ($ch = @fread($fp, 65536)) { $o .= $ch; if (preg_match('/^A\d+ (OK|NO|BAD|BYE)/m', $o)) break; } return $o; };
+    $c("LOGIN $user $pass"); $r();
+    $c("SELECT \"$mailbox\""); $r();
+    $c("STORE $msgSeq +FLAGS (\Deleted)"); $r();
+    $c("EXPUNGE"); $r();
+    usleep(200000); // 200ms delay for server to process
+    fclose($fp);
+    return true;
+}
+
+function extract_email_body(string $imapResponse): string
+{
+    // Try BODY[1] content
+    if (preg_match('/BODY\[1\]\s+\{(\d+)\}\s*\n(.*?)(?=\nA\d+\s|\n\))/s', $imapResponse, $m)) {
+        $body = substr($m[2], 0, (int)$m[1]);
+        if (trim($body)) {
+            $body = quoted_printable_decode($body);
+            // Strip any remaining MIME headers
+            $body = preg_replace('/^Content-.*\n?/im', '', $body);
+            $body = preg_replace('/^\s*--.*\n?/m', '', $body);
+            return trim($body);
+        }
+    }
+    // Fallback to BODY[TEXT]
+    if (preg_match('/BODY\[TEXT\]\s+\{(\d+)\}\s*\n(.*?)(?=\nA\d+\s|\n\))/s', $imapResponse, $m)) {
+        $body = substr($m[2], 0, (int)$m[1]);
+        // Strip MIME boundaries and headers
+        $body = preg_replace('/^Content-.*\n?/im', '', $body);
+        $body = preg_replace('/^--.*\n?/m', '', $body);
+        if (stripos($body, '<html') !== false || stripos($body, '<div') !== false) {
+            $body = strip_tags($body);
+        }
+        return trim(quoted_printable_decode($body));
+    }
+    return '';
+}
+
+function imap_fetch_mail(string $host, int $port, string $user, string $pass, string $mailbox = 'INBOX', int $limit = 20): array
+{
+    $errno = 0; $errstr = '';
+    $context = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+    $prefix = ($port == 993) ? 'ssl://' : '';
+    $fp = @stream_socket_client($prefix . $host . ':' . $port, $errno, $errstr, 10, STREAM_CLIENT_CONNECT, $context);
+    if (!$fp) return ['error' => "Connection failed: $errstr"];
+
+    stream_set_timeout($fp, 5);
+    $buf = fread($fp, 8192);
+    if ($buf === false || $buf === '') return ['error' => 'No server greeting'];
+
+    $tag = 1;
+    $cmd = function($c) use ($fp, &$tag) { fwrite($fp, "A$tag $c\r\n"); fflush($fp); $tag++; };
+    $read = function() use ($fp) {
+        $lines = []; $buf = '';
+        do {
+            $chunk = fread($fp, 8192);
+            if ($chunk === false || $chunk === '') break;
+            $buf .= $chunk;
+        } while (strpos($chunk, "\r\n") !== false && !preg_match('/^A\d+ (OK|NO|BAD|BYE).*/m', $buf));
+        foreach (explode("\r\n", $buf) as $l) { $l = trim($l); if ($l) $lines[] = $l; }
+        return $lines;
+    };
+
+    $cmd("LOGIN $user $pass");
+    $r = $read();
+    if (!preg_match('/^A\d+ OK/', end($r))) { fclose($fp); return ['error' => 'Login failed']; }
+
+    $cmd("SELECT \"$mailbox\"");
+    $r = $read();
+    $exists = 0;
+    foreach ($r as $line) { if (preg_match('/^\* (\d+) EXISTS/', $line, $m)) $exists = (int)$m[1]; }
+    if (!$exists) { fclose($fp); return []; }
+
+    $start = max(1, $exists - $limit + 1);
+    $cmd("FETCH $start:$exists (FLAGS BODY[HEADER.FIELDS (FROM SUBJECT DATE)])");
+    $r = $read();
+
+    $messages = []; $current = [];
+    foreach ($r as $line) {
+        if (preg_match('/^\* (\d+) FETCH/', $line, $m)) { if (!empty($current)) $messages[] = $current; $current = ['uid' => (int)$m[1]]; }
+        elseif (preg_match('/^FROM:\s*(.+)/i', $line, $m)) $current['from'] = trim(mb_decode_mimeheader($m[1]));
+        elseif (preg_match('/^SUBJECT:\s*(.+)/i', $line, $m)) $current['subject'] = trim(mb_decode_mimeheader($m[1]));
+        elseif (preg_match('/^DATE:\s*(.+)/i', $line, $m)) $current['date'] = trim($m[1]);
+    }
+    if (!empty($current)) $messages[] = $current;
+    fclose($fp);
+    return $messages;
+}
+
+function view(string $view, array $data = [], bool $direct = false): string
+{
+    $path = dirname(__DIR__) . '/Views/' . str_replace('.', '/', $view) . '.php';
+    if (!file_exists($path)) {
+        if ($direct) {
+            echo "<h1>View not found: {$view}</h1>";
+            return '';
+        }
+        throw new RuntimeException("View not found: {$view} ({$path})");
+    }
+
+    extract($data);
+
+    if ($direct) {
+        require $path;
+        return '';
+    }
+
+    ob_start();
+    require dirname(__DIR__) . '/Views/layouts/main.php';
+    return ob_get_clean();
+}
+
+function paginate(string $query, int $perPage = 12): array
+{
+    $page = max(1, (int)($_GET['page_num'] ?? 1));
+    $total = (int)db()->query("SELECT COUNT(*) FROM ({$query}) _sub")->fetchColumn();
+    $lastPage = max(1, (int)ceil($total / $perPage));
+    $offset = ($page - 1) * $perPage;
+
+    $stmt = db()->prepare("{$query} LIMIT {$perPage} OFFSET {$offset}");
+    $stmt->execute();
+    $items = $stmt->fetchAll();
+
+    return [
+        'items' => $items,
+        'current_page' => $page,
+        'last_page' => $lastPage,
+        'total' => $total,
+        'per_page' => $perPage,
+    ];
+}
+
+function slugify(string $text): string
+{
+    $text = preg_replace('/[^a-z0-9]+/i', '-', $text);
+    return strtolower(trim($text, '-'));
+}
+
+function generate_order_number(): string
+{
+    return 'SW-' . strtoupper(bin2hex(random_bytes(4))) . '-' . date('Ymd');
+}
+
+function validate_password_strength(string $password): ?string
+{
+    if (strlen($password) < 8) return 'Password must be at least 8 characters.';
+    if (!preg_match('/[A-Z]/', $password)) return 'Password must contain at least one uppercase letter.';
+    if (!preg_match('/[0-9]/', $password)) return 'Password must contain at least one number.';
+    return null;
+}
+
+function generate_suggested_password(): string
+{
+    $upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $lower = 'abcdefghijklmnopqrstuvwxyz';
+    $digits = '0123456789';
+    $all = $upper . $lower . $digits;
+    $pw = $upper[random_int(0, 25)] . $lower[random_int(0, 25)] . $digits[random_int(0, 9)];
+    for ($i = 0; $i < 7; $i++) $pw .= $all[random_int(0, strlen($all) - 1)];
+    return str_shuffle($pw);
+}
+
+function captcha_generate(): array
+{
+    $a = random_int(1, 20);
+    $b = random_int(1, 20);
+    $op = ['+', '×'][random_int(0, 1)];
+    $result = $op === '+' ? $a + $b : $a * $b;
+    $_SESSION['captcha_answer'] = $result;
+    return ['question' => "{$a} {$op} {$b} = ?"];
+}
+
+function captcha_verify(string $answer): bool
+{
+    if (!isset($_SESSION['captcha_answer'])) return false;
+    $correct = (int)$_SESSION['captcha_answer'] === (int)$answer;
+    unset($_SESSION['captcha_answer']);
+    return $correct;
+}
+
+function captcha_render(): string
+{
+    $c = captcha_generate();
+    return '<div class="captcha" style="margin:12px 0;padding:12px;background:var(--surface2);border-radius:4px;display:flex;align-items:center;gap:8px">'
+        . '<span style="font-size:18px;font-weight:700">' . e($c['question']) . '</span>'
+        . '<input type="number" name="captcha" required style="width:80px;padding:6px;font-size:14px" placeholder="?">'
+        . '</div>';
+}

@@ -288,10 +288,17 @@ function render_product_detail(array $product, array $images, array $sizes, arra
             <div class="option-group">
               <label>Color</label>
               <div class="option-buttons">
-                <?php foreach ($colors as $color): ?>
-                  <label class="option-btn">
-                    <input type="radio" name="color" value="<?= e($color) ?>" required>
-                    <span><?= e($color) ?></span>
+                <?php foreach ($colors as $color): $hex = match(strtolower($color)) {
+                    'black' => '#000000', 'white' => '#ffffff', 'grey' => '#808080',
+                    'pink' => '#ff69b4', 'light blue' => '#87ceeb', 'lime green' => '#32cd32',
+                    'light purple' => '#b19cd9', 'red' => '#ff0000', 'blue' => '#0000ff',
+                    'green' => '#008000', 'yellow' => '#ffff00', 'orange' => '#ffa500',
+                    'purple' => '#800080', 'navy' => '#000080', 'brown' => '#8b4513',
+                    default => '#cccccc'
+                }; ?>
+                  <label class="option-btn color-swatch" style="display:inline-block;margin:4px;cursor:pointer;border:2px solid transparent;border-radius:50%;padding:2px">
+                    <input type="radio" name="color" value="<?= e($color) ?>" required style="display:none" onchange="this.closest('label').querySelector('span').textContent=this.value;document.querySelectorAll('.color-swatch').forEach(function(s){s.style.borderColor='transparent'});this.closest('label').style.borderColor='var(--cyan)'">
+                    <span style="display:inline-block;width:28px;height:28px;border-radius:50%;background:<?= $hex ?>;border:1px solid rgba(0,0,0,0.1)" title="<?= e($color) ?>"></span>
                   </label>
                 <?php endforeach; ?>
               </div>
@@ -560,6 +567,7 @@ function render_contact(): string
             <option>Bulk Orders</option>
           </select></label>
           <label>Message<textarea name="message" required style="min-height:150px"></textarea></label>
+          <?= captcha_render() ?>
           <button class="button primary" type="submit">Send Message</button>
         </form>
       </div>
@@ -679,8 +687,22 @@ function render_register(): string
           <label>ZIP Code<input name="zip" required></label>
           <label>Country<input name="country" value="United States"></label>
         </div>
-        <label>Password<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+        <label>Password<input name="password" type="password" required minlength="8" autocomplete="new-password" id="reg-password"></label>
         <label>Confirm Password<input name="password_confirm" type="password" required></label>
+        <div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="button" style="padding:4px 10px;min-height:auto;font-size:10px" onclick="suggestPassword()">🔑 Suggest Password</button>
+          <span id="pw-suggestion" style="font-size:11px;color:var(--muted)"></span>
+        </div>
+        <script>
+        function suggestPassword() {
+          var u = "ABCDEFGHIJKLMNOPQRSTUVWXYZ", l = "abcdefghijklmnopqrstuvwxyz", d = "0123456789", a = u + l + d;
+          var p = u[Math.floor(Math.random()*26)] + l[Math.floor(Math.random()*26)] + d[Math.floor(Math.random()*10)];
+          for(var i=0;i<7;i++) p += a[Math.floor(Math.random()*a.length)];
+          p = p.split("").sort(function(){return 0.5-Math.random()}).join("");
+          document.getElementById("reg-password").value = p;
+          document.getElementById("pw-suggestion").textContent = "✨ " + p;
+        }
+        </script>
         <p class="hint">By registering, you agree to our <a href="/?page=terms">Terms</a> and <a href="/?page=privacy">Privacy Policy</a>.</p>
         <button class="button primary" type="submit">Create Account</button>
       </form>
@@ -1595,7 +1617,8 @@ function render_bug_report_form(): string
         <label>Description *<textarea name="description" required rows="5" placeholder="Tell us what happened, steps to reproduce, etc."></textarea></label>
         <label>Page URL (where it happened)<input name="page_url" placeholder="https://suggawayz.com/page"></label>
         <label>Screenshot (optional)<input name="screenshot" type="file" accept="image/*"></label>
-        <button class="button primary" type="submit">Submit Bug Report</button>
+        <?= captcha_render() ?>
+          <button class="button primary" type="submit">Submit Bug Report</button>
       </form>
     </section>
     <?php

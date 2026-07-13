@@ -3223,3 +3223,22 @@ function admin_todos(array $todos): void
     </div>
     <?php
 }
+
+function calculate_cron_next(string $expression): int
+{
+    $parts = explode(' ', $expression);
+    if (count($parts) < 5) return time() + 86400;
+    $min=$parts[0];$hour=$parts[1];$dom=$parts[2];$mon=$parts[3];$dow=$parts[4];
+    for ($i = 0; $i < 1440; $i++) {
+        $t = time() + $i * 60;
+        if (cron_match($min,(int)date('i',$t))&&cron_match($hour,(int)date('G',$t))&&cron_match($dom,(int)date('j',$t))&&cron_match($mon,(int)date('n',$t))&&cron_match($dow,(int)date('w',$t))) return $t;
+    }
+    return time() + 86400;
+}
+function cron_match(string $p, int $v): bool
+{
+    if ($p === '*') return true;
+    if (strpos($p, '*/') === 0) return $v % (int)substr($p, 2) === 0;
+    if (strpos($p, '-') !== false) {[$s,$e]=explode('-',$p,2);return $v>=(int)$s&&$v<=(int)$e;}
+    return (int)$p === $v;
+}
